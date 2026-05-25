@@ -39,6 +39,7 @@ import { LiveDeviceMap } from "@/components/geo/LiveDeviceMap";
 import { DeviceDetailPopup } from "@/components/geo/DeviceDetailPopup";
 import AddDeviceModal from "../components/AddDeviceModal";
 import HelpSupportSection from "@/components/HelpSupportSection";
+
 // Local lightweight timestamp normalizer to avoid raw Firestore Timestamp leaks
 const toIsoLocal = (value: unknown): string => {
   if (typeof value === "string") return value;
