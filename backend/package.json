@@ -1,0 +1,30 @@
+{
+  "name": "hydrosentinal-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "sync": "node sync.js",
+    "clear:devices": "node clearAllDevices.js",
+    "check": "node --check server.js && node --check sync.js && node --check firebase.js && node --check db.js && node --check clearAllDevices.js"
+  },
+  "dependencies": {
+    "@sentry/node": "^10.53.1",
+    "better-sqlite3": "^12.9.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1",
+    "firebase-admin": "^13.8.0",
+    "helmet": "^6.0.1",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.22.3",
+    "sqlite3": "^6.0.1",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}

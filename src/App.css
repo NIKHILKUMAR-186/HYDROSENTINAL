@@ -1,0 +1,210 @@
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Light mode background gradient */
+html.light, body.light, body.light-mode, .light {
+  background-color: #5f3ab4;
+  background-image: linear-gradient(90deg, rgba(95,58,180,1) 0%, rgba(115,79,206,1) 38%, rgba(9,122,242,1) 80%, rgba(0,170,255,1) 100%, rgba(0,145,217,1) 92%, rgba(69,142,252,1) 95%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+.app-content-layer {
+  width: 100%;
+  height: 100%;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+body.light-mode .skeleton {
+  background: #e6f7ff;
+}
+
+body.light-mode .skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0,150,255,0.2),
+    transparent
+  );
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255,255,255,0.08);
+  border-radius: 6px;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255,255,255,0.3),
+    transparent
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* Skeleton fade out */
+.skeleton-exit {
+  animation: skeletonFadeOut 0.5s ease forwards;
+}
+
+@keyframes skeletonFadeOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+/* Real content fade in */
+.content-enter {
+  animation: contentFadeIn 0.6s ease forwards;
+}
+
+@keyframes contentFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+@keyframes wave {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-wave {
+  animation: wave 2s linear infinite;
+}
+
+/* Claymorphism styles for login page */
+.clay-card {
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(242,255,0,0.3) 0%, rgba(255,255,190,0.58) 55%, rgba(255,255,235,0.9) 100%);
+  box-shadow: 0 20px 36px rgba(102,94,0,0.08), inset 0 2px 8px rgba(255,255,255,0.55);
+  border: 1px solid rgba(191,201,0,0.2);
+}
+
+.clay-input {
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff, #f7f9ff);
+  box-shadow: inset 0 6px 12px rgba(79,70,229,0.04), 0 6px 18px rgba(16,24,40,0.03);
+  transition: box-shadow 180ms ease, transform 120ms ease;
+}
+.clay-input:focus {
+  outline: none;
+  box-shadow: 0 8px 28px rgba(108,99,255,0.14), inset 0 2px 6px rgba(255,255,255,0.6);
+  transform: translateY(-1px);
+}
+
+.clay-button {
+  border-radius: 20px;
+  background: linear-gradient(180deg, #6C63FF 0%, #584BFF 100%);
+  color: #fff !important;
+  box-shadow: 0 8px 0 #4B44CC, 0 14px 20px rgba(108,99,255,0.35);
+  transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+}
+.clay-button:active,
+.clay-button.pressed {
+  transform: translateY(4px);
+  box-shadow: 0 3px 0 rgba(75,68,204,0.9), 0 6px 12px rgba(108,99,255,0.18);
+}
+.clay-button.clay-ghost {
+  background: linear-gradient(180deg, #ffffff 0%, #f3f6ff 100%);
+  color: #2b2b2b !important;
+  box-shadow: 0 10px 24px rgba(16,24,40,0.06), inset 0 2px 6px rgba(255,255,255,0.6);
+}
+
+.clay-toggle {
+  border-radius: 14px;
+  box-shadow: 0 8px 18px rgba(16,24,40,0.04);
+}
+
+/* Dark theme overrides */
+.dark .clay-card {
+  background: linear-gradient(180deg, rgba(20,23,28,0.9) 0%, rgba(14,18,24,0.85) 100%);
+  box-shadow: 0 20px 40px rgba(6,11,20,0.6), inset 0 2px 8px rgba(255,255,255,0.02);
+  border: 1px solid rgba(108,99,255,0.06);
+}
+.dark .clay-input {
+  background: linear-gradient(180deg, #0f1724, #0b1220);
+  box-shadow: inset 0 6px 12px rgba(0,0,0,0.6), 0 6px 18px rgba(2,6,23,0.6);
+  color: #e6eefb;
+}
+.dark .clay-input:focus {
+  box-shadow: 0 8px 28px rgba(108,99,255,0.12), inset 0 2px 6px rgba(255,255,255,0.02);
+}
+.dark .clay-button {
+  background: linear-gradient(180deg, #5246ff 0%, #3123ff 100%);
+  box-shadow: 0 8px 0 #2e2488, 0 14px 20px rgba(64,56,255,0.24);
+}
+.dark .clay-button.clay-ghost {
+  background: linear-gradient(180deg, #0b1220 0%, #0a0f18 100%);
+  color: #dbeafe !important;
+  box-shadow: 0 10px 24px rgba(2,6,23,0.6), inset 0 2px 6px rgba(255,255,255,0.02);
+}
+
+/* Small helpers */
+.clay-preview {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Segoe UI Mono", monospace;
+  font-size: 0.78rem;
+  color: rgba(15,23,42,0.7);
+}
+
+@media (max-width: 640px) {
+  .clay-card { padding: 1.2rem !important; }
+  .clay-button { width: 100%; }
+}

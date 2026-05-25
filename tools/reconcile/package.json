@@ -1,0 +1,12 @@
+{
+  "name": "hydrosentinel-reconcile",
+  "version": "0.1.0",
+  "description": "Tool to reconcile Firestore 'users' collection with Firebase Auth",
+  "main": "reconcile.js",
+  "scripts": {
+    "start": "node reconcile.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^11.11.0"
+  }
+}
