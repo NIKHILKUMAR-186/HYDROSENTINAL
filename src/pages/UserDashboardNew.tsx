@@ -9,11 +9,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { MapPin, Plus, Trash2, Activity } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
+import { generateRandomReading } from '@/lib/deviceStore';
+import { postReadingToSupabase } from '@/services/readingsService';
 
 const UserDashboard = () => {
   const { user, logout } = useAuth();
   const { devices, addDevice, removeDevice } = useDevices();
   const [showAddDeviceModal, setShowAddDeviceModal] = useState(false);
+  const [addReadingLoading, setAddReadingLoading] = useState(false);
 
   const handleAddDevice = async (deviceData: { name: string; lat: number; lng: number; zone: string; location: string }) => {
     // location is currently unused by the simple local hook; keep API compatible
@@ -25,13 +29,38 @@ const UserDashboard = () => {
     removeDevice(id);
   };
 
-  const handleAddReading = () => {
-    if (devices.length === 0) {
-      alert('Please add a device first');
+  const handleAddReading = async () => {
+    if (addReadingLoading) {
       return;
     }
-    // TODO: Implement add reading functionality
-    alert('Add reading functionality not implemented yet');
+
+    if (devices.length === 0) {
+      toast.error('Please add a device first.');
+      return;
+    }
+
+    const reading = generateRandomReading();
+    if (
+      !Number.isFinite(reading.ph) ||
+      !Number.isFinite(reading.tds) ||
+      !Number.isFinite(reading.turbidity) ||
+      !Number.isFinite(reading.temperature)
+    ) {
+      toast.error('Invalid reading values.');
+      return;
+    }
+
+    setAddReadingLoading(true);
+
+    try {
+      const insertedReading = await postReadingToSupabase(reading);
+      toast.success(`Reading saved to Supabase as ${insertedReading.status.toLowerCase()}.`);
+    } catch (error) {
+      console.error('Failed to add reading:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to add reading.');
+    } finally {
+      setAddReadingLoading(false);
+    }
   };
 
   return (
@@ -59,12 +88,13 @@ const UserDashboard = () => {
                 Add Device
               </Button>
               <Button
-                onClick={handleAddReading}
+                onClick={() => void handleAddReading()}
+                disabled={addReadingLoading}
                 variant="outline"
                 className="border-cyan-500 text-cyan-600 hover:bg-cyan-50 dark:hover:bg-cyan-950"
               >
                 <Activity className="w-4 h-4 mr-2" />
-                Add Reading
+                {addReadingLoading ? 'Adding...' : 'Add Reading'}
               </Button>
               <Button onClick={logout} variant="outline">
                 Logout

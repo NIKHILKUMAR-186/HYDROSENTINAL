@@ -96,6 +96,7 @@ import {
   LocateFixed,
   Siren,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import {
   addDoc,
@@ -128,6 +129,7 @@ import {
 import { getZone } from "@/lib/utils";
 import { getDevicesByZone } from "@/lib/deviceStore";
 import { calculateAreaStatus } from "@/lib/utils";
+import { postReadingToSupabase } from "@/services/readingsService";
 const LOCATIONS = [
   "North Zone",
   "South Zone",
@@ -235,6 +237,7 @@ export const UserDashboard = () => {
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [addDeviceLoading, setAddDeviceLoading] = useState(false);
+  const [addReadingLoading, setAddReadingLoading] = useState(false);
 
   //   const [devices, setDevices] = useState([]);
   const [newDevice, setNewDevice] = useState<{
@@ -791,36 +794,52 @@ export const UserDashboard = () => {
   }, [user]);
 
   const addNewReading = async () => {
-    if (!selectedDevice) {
+    const targetDevice = selectedDevice ?? devices[0] ?? null;
+    if (!targetDevice) {
+      toast.error("Please add a device first.");
       return;
     }
 
-    const newReading = generateRandomReading();
-    const readingDocument = {
-      ...newReading,
-      userId: user!.uid,
-      deviceId: selectedDevice.id,
-    };
+    const reading = generateRandomReading();
 
-    try {
-      await addDoc(
-        collection(
-          db,
-          "users",
-          user!.uid,
-          "devices",
-          selectedDevice.id,
-          "readings",
-        ),
-        readingDocument,
-      );
-    } catch {
-      // Local fallback still works.
+    if (
+      !Number.isFinite(reading.ph) ||
+      !Number.isFinite(reading.tds) ||
+      !Number.isFinite(reading.turbidity) ||
+      !Number.isFinite(reading.temperature)
+    ) {
+      toast.error("Invalid reading values. Please try again.");
+      return;
     }
 
-    const nextHistory = appendLocalDeviceReading(selectedDevice.id, newReading);
-    setHistory(nextHistory);
-    await refreshDeviceStatus(selectedDevice.id);
+    setAddReadingLoading(true);
+
+    try {
+      const insertedReading = await postReadingToSupabase(reading);
+      const normalizedReading = normalizeDeviceReading({
+        ph: insertedReading.ph,
+        tds: insertedReading.tds,
+        turbidity: insertedReading.turbidity,
+        temperature: insertedReading.temperature,
+        status:
+          insertedReading.status.toUpperCase() === "SAFE"
+            ? "SAFE"
+            : "NOT SAFE",
+        timestamp: insertedReading.created_at,
+      });
+
+      const nextHistory = appendLocalDeviceReading(targetDevice.id, normalizedReading);
+      setHistory(nextHistory);
+      setSelectedDeviceId((prev) => prev ?? targetDevice.id);
+      await refreshDeviceStatus(targetDevice.id);
+
+      toast.success(`Reading saved to Supabase as ${insertedReading.status.toLowerCase()}.`);
+    } catch (error) {
+      console.error("Failed to add reading:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to add reading.");
+    } finally {
+      setAddReadingLoading(false);
+    }
   };
 
   const handleLogout = async () => {
@@ -2053,6 +2072,7 @@ export const UserDashboard = () => {
                           </Button>
                           <Button
                             onClick={() => void addNewReading()}
+                            disabled={addReadingLoading}
                             className="bg-indigo-500 hover:bg-indigo-600 text-white"
                           >
                             Add Reading

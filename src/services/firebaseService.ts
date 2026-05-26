@@ -1,4 +1,4 @@
-import { where, orderBy, limit, serverTimestamp, Timestamp, Unsubscribe, FieldValue } from "firebase/firestore";
+import { where, orderBy, limit, serverTimestamp, Timestamp, Unsubscribe, FieldValue, onSnapshot, doc, query, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc } from "firebase/firestore";
 import { docSafe, collectionSafe, getDocSafe, getDocsSafe, querySafe, onSnapshotSafe, setDocSafe, updateDocSafe, deleteDocSafe } from "@/lib/firestoreSafe";
 import {
   ref,
@@ -139,7 +139,7 @@ export const deviceService = {
   async getDevices(uid: string): Promise<Device[]> {
     try {
       const q = querySafe(collectionSafe(db, "users", uid, "devices"));
-      const snapshot = await getDocs(q);
+      const snapshot = await getDocsSafe(q);
       return snapshot.docs.map((doc) => doc.data() as Device);
     } catch (error) {
       console.error("Error fetching devices:", error);
@@ -199,11 +199,8 @@ export const notificationService = {
   // Get notifications
   async getNotifications(uid: string, limit = 50): Promise<Notification[]> {
     try {
-      const q = query(
-        collection(db, "users", uid, "notifications"),
-        where("read", "==", false)
-      );
-      const snapshot = await getDocs(q);
+      const q = querySafe(collectionSafe(db, "users", uid, "notifications"), where("read", "==", false));
+      const snapshot = await getDocsSafe(q);
       return snapshot.docs
         .map((doc) => doc.data() as Notification)
         .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis())
@@ -281,8 +278,8 @@ export const complaintService = {
   // Get user complaints
   async getComplaints(uid: string): Promise<Complaint[]> {
     try {
-      const q = query(collection(db, "users", uid, "complaints"));
-      const snapshot = await getDocs(q);
+      const q = querySafe(collectionSafe(db, "users", uid, "complaints"));
+      const snapshot = await getDocsSafe(q);
       return snapshot.docs
         .map((doc) => doc.data() as Complaint)
         .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
@@ -338,8 +335,8 @@ export const activityService = {
   // Get activities
   async getActivities(uid: string, limit = 50): Promise<Activity[]> {
     try {
-      const snapshot = await getDocs(
-        query(collection(db, "users", uid, "activities"))
+      const snapshot = await getDocsSafe(
+        querySafe(collectionSafe(db, "users", uid, "activities"))
       );
       return snapshot.docs
         .map((doc) => doc.data() as Activity)
@@ -391,8 +388,8 @@ export const analyticsService = {
   // Get device readings
   async getReadings(uid: string, deviceId: string, limit = 100): Promise<WaterReading[]> {
     try {
-      const snapshot = await getDocs(
-        query(collection(db, "users", uid, "devices", deviceId, "readings"))
+      const snapshot = await getDocsSafe(
+        querySafe(collectionSafe(db, "users", uid, "devices", deviceId, "readings"))
       );
       return snapshot.docs
         .map((doc) => doc.data() as WaterReading)
@@ -475,8 +472,8 @@ export const loginHistoryService = {
   // Get login history
   async getLoginHistory(uid: string, limit = 20): Promise<LoginHistory[]> {
     try {
-      const snapshot = await getDocs(
-        query(collection(db, "users", uid, "loginHistory"))
+      const snapshot = await getDocsSafe(
+        querySafe(collectionSafe(db, "users", uid, "loginHistory"))
       );
       return snapshot.docs
         .map((doc) => doc.data() as LoginHistory)
