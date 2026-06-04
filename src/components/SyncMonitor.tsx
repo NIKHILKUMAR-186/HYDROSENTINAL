@@ -305,3 +305,5 @@ export const SyncMonitor: React.FC<{ userId?: string }> = ({ userId }) => {
     </div>
   );
 };
+
+export default SyncMonitor;

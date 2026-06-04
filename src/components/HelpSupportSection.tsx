@@ -195,7 +195,8 @@ const HelpSupportSection: React.FC = () => {
   const isDark = theme === "dark";
 
   return (
-    <div className="min-h-screen space-y-8 py-8 px-4 sm:px-6 lg:px-8">
+    // <div className="min-h-screen space-y-8 py-8 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen  text-slate-950 dark:text-white pb-28 md:pb-16 space-y-8 py-8 px-4 sm:px-6 lg:px-8">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -422,7 +423,7 @@ const HelpSupportSection: React.FC = () => {
               <div className="space-y-2 text-left">
                 <h3 className="font-semibold text-white">Emergency Hotline</h3>
                 <a
-                  href="tel:+919876543210"
+                  href="tel:+917979883455"
                   className="inline-flex items-center gap-2 text-lg font-bold text-red-400 hover:text-red-300 transition-colors"
                 >
                   <Phone className="h-5 w-5" />
@@ -437,7 +438,7 @@ const HelpSupportSection: React.FC = () => {
         {/* Contact Support Card */}
         <motion.div variants={itemVariants}>
           <a
-            href="mailto:support@hydrosentinal.com"
+            href="mailto:saveralaptop@gmail.com"
             className="group relative h-full w-full block overflow-hidden rounded-2xl bg-gradient-to-br from-blue-500/10 via-cyan-500/5 to-transparent p-6 transition-all hover:from-blue-500/20 hover:via-cyan-500/10 border border-blue-500/20 hover:border-blue-500/40"
           >
             <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-transparent to-blue-500/0 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -541,14 +542,14 @@ const HelpSupportSection: React.FC = () => {
               icon: FileText,
               title: "Detailed Reports",
               description: "Generate comprehensive water analysis reports",
-              color: "purple",
+              color: "orange",
             },
             {
               icon: Droplet,
               title: "Multi-Parameter",
               description:
                 "Monitor pH, TDS, Temperature, Turbidity, and more",
-              color: "cyan",
+              color: "purple",
             },
             {
               icon: AlertTriangle,
@@ -603,10 +604,10 @@ const HelpSupportSection: React.FC = () => {
               <CardContent className="space-y-2">
                 <p className="text-sm text-slate-300">
                   <a
-                    href="mailto:support@hydrosentinal.com"
+                    href="mailto:saveralaptop@gmail.com"
                     className="text-cyan-400 hover:text-cyan-300 transition-colors"
                   >
-                    support@hydrosentinal.com
+                    saveralaptop@gmail.com
                   </a>
                 </p>
                 <p className="text-xs text-slate-500">
@@ -628,10 +629,10 @@ const HelpSupportSection: React.FC = () => {
               <CardContent className="space-y-2">
                 <p className="text-sm text-slate-300">
                   <a
-                    href="tel:+919876543210"
+                    href="tel:+917979883455"
                     className="text-red-400 hover:text-red-300 transition-colors font-semibold"
                   >
-                    +91 9876 543210
+                    +91 98765 43210
                   </a>
                 </p>
                 <p className="text-xs text-slate-500">Available 24/7 for emergencies</p>

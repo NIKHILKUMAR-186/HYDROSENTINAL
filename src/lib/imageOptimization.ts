@@ -41,8 +41,8 @@ export const getDevicePerformanceLevel = () => {
 // Progressive image loading with LQIP (Low Quality Image Placeholder)
 export const createProgressiveImageStyle = (placeholder: string) => ({
   backgroundImage: `url(${placeholder})`,
-  backgroundSize: 'cover',
+  // backgroundSize: 'cover',
   backgroundPosition: 'center',
   filter: 'blur(20px)',
-  transition: 'filter 0.3s ease',
+  transition: 'filter 0.5s ease',
 });
