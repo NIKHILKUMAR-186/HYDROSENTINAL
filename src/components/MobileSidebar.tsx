@@ -17,7 +17,6 @@ import {
 
 export type MobileSidebarTab =
   | "Overview"
-  | "Command Center"
   | "Charts"
   | "Water Distribution"
   | "Hardware"
@@ -42,7 +41,6 @@ const menuItems: Array<{
   icon: typeof LayoutDashboard;
 }> = [
   { label: "Overview", icon: LayoutDashboard },
-  { label: "Command Center", icon: AlertTriangle },
   { label: "Charts", icon: ChartLine },
   { label: "Water Distribution", icon: Waves },
   { label: "Hardware", icon: Cpu },

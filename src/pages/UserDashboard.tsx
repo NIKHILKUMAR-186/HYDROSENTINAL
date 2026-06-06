@@ -18,7 +18,6 @@ import { SensorCard } from "@/components/SensorCard";
 import { WaterGraph } from "@/components/WaterGraph";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { AlertPanel } from "@/components/AlertPanel";
 import MobileHeader from "@/components/MobileHeader";
 import MobileSidebar, { MobileSidebarTab } from "@/components/MobileSidebar";
 import FloatingSyncWidget from "@/components/FloatingSyncWidget";
@@ -31,7 +30,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useWaterAlerts } from "@/hooks/useWaterAlerts";
 import { useGeoSimulation } from "@/hooks/useGeoSimulation";
 import { useDevices } from "@/hooks/useDevices";
-import { buildCommandCenterModel } from "@/lib/commandCenterModel";
 import { DeviceLocationPicker } from "@/components/geo/DeviceLocationPicker";
 import { GeoIntelligenceMap } from "@/components/geo/GeoIntelligenceMap";
 import { ZoneIntelligencePanel } from "@/components/geo/ZoneIntelligencePanel";
@@ -186,15 +184,15 @@ const mergeDeviceLists = (...deviceGroups: DeviceRecord[][]) => {
   return Array.from(merged.values());
 };
 
-// Command-center helpers moved to `src/lib/commandCenterModel.ts` to reduce bundle size.
+// Alert panel helpers were separated into a lightweight helper module to keep the dashboard bundle lean.
 
 type DashboardTab =
   | "Overview"
-  | "Command Center"
   | "Charts"
-  | "Water Distribution"
-  | "Hardware"
   | "AI"
+  | "Water Distribution"
+  | "Alert Panel"
+  | "Hardware"
   | "Cloud"
   | "Reports"
   | "Profile"
@@ -876,13 +874,6 @@ export const UserDashboard = () => {
       accent: "from-cyan-500 to-slate-500",
       chip: "bg-cyan-100 text-cyan-700 ring-cyan-200 dark:bg-cyan-900/40 dark:text-cyan-200",
     },
-    "Command Center": {
-      eyebrow: "Alert Command Center",
-      title: "Command Center",
-      subtitle: "Live incident triage, AI root cause analysis, and response guidance.",
-      accent: "from-amber-500 to-slate-700",
-      chip: "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-900/40 dark:text-amber-200",
-    },
     Charts: {
       eyebrow: "Charts",
       title: "Charts",
@@ -896,6 +887,13 @@ export const UserDashboard = () => {
       subtitle: "Monitor distribution and coverage across zones.",
       accent: "from-sky-500 to-blue-700",
       chip: "bg-sky-100 text-sky-700 ring-sky-200 dark:bg-sky-900/40 dark:text-sky-200",
+    },
+    "Alert Panel": {
+      eyebrow: "Alerts",
+      title: "Alert Panel",
+      subtitle: "Review and manage water quality alerts.",
+      accent: "from-red-500 to-red-700",
+      chip: "bg-red-100 text-red-700 ring-red-200 dark:bg-red-900/40 dark:text-red-200",
     },
     Hardware: {
       eyebrow: "Hardware",
@@ -965,10 +963,6 @@ export const UserDashboard = () => {
   const [geoSimulationEnabled, setGeoSimulationEnabled] = useState(false);
   const [geoSoundEnabled, setGeoSoundEnabled] = useState(false);
   const [geoSelectedId, setGeoSelectedId] = useState<string | null>(null);
-  const [hydroAiOpen, setHydroAiOpen] = useState(false);
-  const [incidentReportCopied, setIncidentReportCopied] = useState(false);
-  const [commandCenterDemoMode, setCommandCenterDemoMode] = useState(false);
-  const [whatIfScenario, setWhatIfScenario] = useState<"filter" | "flush" | "inspect">("filter");
 
   const downloadCSV = () => {
     if (!selectedDevice) return;
@@ -1231,64 +1225,6 @@ export const UserDashboard = () => {
     }
   }, [displayedGeoAlerts, geoSoundEnabled]);
 
-  const commandCenterModel = useMemo(
-    () =>
-      buildCommandCenterModel({
-        history,
-        latestReadings,
-        latest,
-        devices,
-        latestReadingByDevice,
-        selectedDevice,
-        spreadPrediction,
-        waterAlerts: {
-          recentAlerts: waterAlerts.recentAlerts,
-          currentLevel: waterAlerts.currentLevel,
-        },
-        connectionStatus,
-        alerts,
-      }),
-    [
-      alerts,
-      connectionStatus,
-      devices,
-      history,
-      latest,
-      latestReadings,
-      latestReadingByDevice,
-      selectedDevice,
-      spreadPrediction,
-      waterAlerts.currentLevel,
-      waterAlerts.recentAlerts,
-    ],
-  );
-
-  const handleGenerateIncidentReport = async () => {
-    try {
-      await navigator.clipboard.writeText(commandCenterModel.incidentReport);
-      setIncidentReportCopied(true);
-      toast.success("Incident report copied to clipboard.");
-
-      window.setTimeout(() => setIncidentReportCopied(false), 1800);
-      return;
-    } catch (error) {
-      console.warn("Clipboard copy failed, falling back to download.", error);
-    }
-
-    const blob = new Blob([commandCenterModel.incidentReport], {
-      type: "text/plain;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${selectedDevice?.uniqueId ?? "hydrosentinal"}-incident-report.txt`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-    toast.success("Incident report downloaded.");
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-transparent flex items-center justify-center">
@@ -1309,48 +1245,6 @@ export const UserDashboard = () => {
   const noDevices = !devicesLoading && devices.length === 0;
   const mobileNavigationActive =
     selectedInfoPanel === "Alerts" ? "Alerts" : activeTab;
-  const commandCenterScenarioMap = {
-    filter: {
-      label: "Replace filter cartridges",
-      detail: "Best for sediment fatigue and persistent turbidity drift.",
-      riskDrop: commandCenterModel.whatIf.replaceFilterImpact,
-      scoreDelta: commandCenterModel.whatIf.scoreDelta,
-    },
-    flush: {
-      label: "Flush and recalibrate",
-      detail: "Good for short-term source disturbance or a noisy intake.",
-      riskDrop: Math.max(6, Math.round(commandCenterModel.whatIf.replaceFilterImpact * 0.7)),
-      scoreDelta: Math.max(3, Math.round(commandCenterModel.whatIf.scoreDelta * 0.75)),
-    },
-    inspect: {
-      label: "Dispatch field inspection",
-      detail: "Fastest path for a manual site check and sensor validation.",
-      riskDrop: Math.max(4, Math.round(commandCenterModel.whatIf.replaceFilterImpact * 0.55)),
-      scoreDelta: Math.max(2, Math.round(commandCenterModel.whatIf.scoreDelta * 0.6)),
-    },
-  } as const;
-  const activeScenario = commandCenterScenarioMap[whatIfScenario];
-  const commandCenterQualityScore = commandCenterDemoMode
-    ? Math.min(99, commandCenterModel.qualityScore + 7)
-    : commandCenterModel.qualityScore;
-  const commandCenterRisk24h = commandCenterDemoMode
-    ? Math.max(5, commandCenterModel.risk24h - 11)
-    : commandCenterModel.risk24h;
-  const commandCenterRisk48h = commandCenterDemoMode
-    ? Math.max(commandCenterRisk24h + 4, commandCenterModel.risk48h - 9)
-    : commandCenterModel.risk48h;
-  const commandCenterCauseSignals = commandCenterDemoMode
-    ? [
-        "Demo mode predicts a recoverable sediment pulse and filter fatigue.",
-        ...commandCenterModel.causeSignals.slice(0, 2),
-      ]
-    : commandCenterModel.causeSignals;
-  const commandCenterRecommendations = commandCenterDemoMode
-    ? [
-        "Demo mode is active. Use it to present the recovery path and simulation controls.",
-        ...commandCenterModel.recommendations.slice(0, 2),
-      ]
-    : commandCenterModel.recommendations;
 
   return (
     <main className="min-h-screen bg-transparent text-slate-950 dark:text-white pb-28 md:pb-16">
@@ -1608,6 +1502,105 @@ export const UserDashboard = () => {
           </motion.div>
         ) : null}
 
+        {activeTab === "Overview" ? (
+          <motion.section
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+            className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.05 }}
+              className="rounded-[2rem] border border-slate-200/80 bg-white/95 p-6 shadow-sm dark:border-slate-700 dark:bg-slate-950/85"
+            >
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">
+                    Alert Panel
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black text-slate-950 dark:text-white">
+                    Live alert overview
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    Real-time alert status for your selected device, with priority incident insights and next-step actions.
+                  </p>
+                </div>
+                <div className="flex flex-col items-start gap-3 sm:items-end">
+                  <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold ${waterAlerts.alertColor ?? "text-slate-700 dark:text-slate-200"} bg-slate-100/80 dark:bg-slate-800/70`}>
+                    <span>{waterAlerts.alertIcon ?? "ℹ️"}</span>
+                    {waterAlerts.currentLevel ? waterAlerts.currentLevel.toUpperCase() : "No active alert"}
+                  </span>
+                  <Button
+                    type="button"
+                    onClick={() => navigate("/alert-panel")}
+                    className="rounded-full bg-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 hover:bg-cyan-600"
+                  >
+                    Open Alert Panel
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 sm:grid-cols-3">
+                <div className="rounded-3xl border border-slate-200/80 bg-slate-50 p-5 text-slate-900 shadow-sm dark:border-white/10 dark:bg-slate-950/80 dark:text-white">
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Current TDS</p>
+                  <p className="mt-3 text-3xl font-black text-slate-950 dark:text-white">{waterAlerts.currentReading?.tds ?? "—"} ppm</p>
+                </div>
+                <div className="rounded-3xl border border-slate-200/80 bg-slate-50 p-5 text-slate-900 shadow-sm dark:border-white/10 dark:bg-slate-950/80 dark:text-white">
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Current pH</p>
+                  <p className="mt-3 text-3xl font-black text-slate-950 dark:text-white">{waterAlerts.currentReading?.ph ?? "—"}</p>
+                </div>
+                <div className="rounded-3xl border border-slate-200/80 bg-slate-50 p-5 text-slate-900 shadow-sm dark:border-white/10 dark:bg-slate-950/80 dark:text-white">
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Current Turbidity</p>
+                  <p className="mt-3 text-3xl font-black text-slate-950 dark:text-white">{waterAlerts.currentReading?.turbidity ?? "—"} NTU</p>
+                </div>
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.1 }}
+              className="rounded-[2rem] border border-slate-200/80 bg-white/95 p-6 shadow-sm dark:border-slate-700 dark:bg-slate-950/85"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">Recent Alerts</p>
+                  <h3 className="mt-2 text-xl font-black text-slate-950 dark:text-white">Priority incidents</h3>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  {waterAlerts.recentAlerts.length} active
+                </span>
+              </div>
+
+              <div className="mt-5 space-y-3">
+                {waterAlerts.recentAlerts.length > 0 ? (
+                  waterAlerts.recentAlerts.slice(0, 4).map((alert) => (
+                    <div key={alert.id} className="rounded-3xl border border-slate-200/80 bg-slate-50 p-4 text-slate-900 shadow-sm dark:border-white/10 dark:bg-slate-950/80 dark:text-white">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-950 dark:text-white">{alert.level.toUpperCase()}</p>
+                          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{alert.message}</p>
+                        </div>
+                        <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">{new Date(alert.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <p className="rounded-2xl bg-white/80 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-slate-900/70 dark:text-slate-300">Device: {alert.deviceId}</p>
+                        <p className="rounded-2xl bg-slate-100/90 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-slate-800/70 dark:text-slate-300">SMS sent: {alert.sentSMS ? "Yes" : "No"}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50/90 p-6 text-center text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/80 dark:text-slate-300">
+                    No recent alerts at the moment.
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.section>
+        ) : null}
+
         <motion.section
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1760,16 +1753,16 @@ export const UserDashboard = () => {
                     icon: LayoutDashboard,
                     tab: "Overview",
                   },
-                  {
-                    label: "Command Center",
-                    icon: AlertTriangle,
-                    tab: "Command Center",
-                  },
                   { label: "Charts", icon: ChartLine, tab: "Charts" },
                   {
                     label: "Water Distribution",
                     icon: Waves,
                     tab: "Water Distribution",
+                  },
+                  {
+                    label: "Alert Panel",
+                    icon: AlertTriangle,
+                    tab: "Alert Panel",
                   },
                   { label: "Hardware", icon: Cpu, tab: "Hardware" },
                   { label: "Artificial Intelligence", icon: Brain, tab: "AI" },
@@ -2318,560 +2311,6 @@ export const UserDashboard = () => {
                 </motion.div>
               )}
 
-              {activeTab === "Command Center" && (
-                <motion.section
-                  key="command-center-page"
-                  className="relative overflow-hidden rounded-[2.25rem] border border-cyan-400/15 bg-slate-950/95 p-5 shadow-[0_40px_100px_-35px_rgba(8,145,178,0.45)] ring-1 ring-white/5 sm:p-6"
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -14 }}
-                  transition={{ duration: 0.22 }}
-                >
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_28%),radial-gradient(circle_at_top_right,rgba(16,185,129,0.12),transparent_24%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(2,6,23,0.98))]" />
-                  <div className="absolute inset-0 opacity-40 [background-image:linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px)] [background-size:24px_24px]" />
-                  <div className="relative space-y-6">
-                    <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-                      <div className="max-w-4xl space-y-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-cyan-200">
-                            AI Operations Center
-                          </span>
-                          <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-emerald-200">
-                            Live telemetry
-                          </span>
-                          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-200">
-                            Mission control
-                          </span>
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-cyan-300/80">
-                            Command Center
-                          </p>
-                          <h3 className="mt-2 text-3xl font-black tracking-[-0.04em] text-white sm:text-4xl lg:text-5xl">
-                            AI-Powered Water Operations Center
-                          </h3>
-                          <p className="mt-3 max-w-4xl text-sm leading-6 text-slate-300 sm:text-base">
-                            Current State → Risk → Cause → Prediction → Recommendation → Action.
-                            This workspace turns live water telemetry into a mission-control view with predictive intelligence, incident response, and operator guidance.
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          onClick={handleGenerateIncidentReport}
-                          className="rounded-2xl border border-cyan-400/25 bg-cyan-500/15 px-4 py-3 text-cyan-100 shadow-lg shadow-cyan-950/20 hover:bg-cyan-500/25"
-                        >
-                          <FileBarChart2 className="mr-2 h-4 w-4" />
-                          {incidentReportCopied ? "Report Copied" : "Incident Report"}
-                        </Button>
-                        <Button
-                          type="button"
-                          onClick={() => setHydroAiOpen((value) => !value)}
-                          className="rounded-2xl border border-emerald-400/20 bg-emerald-500/15 px-4 py-3 text-emerald-100 shadow-lg shadow-emerald-950/20 hover:bg-emerald-500/25"
-                        >
-                          <Brain className="mr-2 h-4 w-4" />
-                          HydroAI Assistant
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-                      {commandCenterModel.recentTimeline.map((item, index) => (
-                        <div
-                          key={item.id}
-                          className={`rounded-3xl border p-4 backdrop-blur-xl ${index === 0 ? "border-cyan-400/20 bg-cyan-500/10" : index === 1 ? "border-rose-400/20 bg-rose-500/10" : index === 2 ? "border-amber-400/20 bg-amber-500/10" : index === 3 ? "border-blue-400/20 bg-blue-500/10" : "border-emerald-400/20 bg-emerald-500/10"}`}
-                        >
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.26em] text-slate-300">
-                            {item.stage}
-                          </p>
-                          <h4 className="mt-2 text-sm font-semibold text-white">
-                            {item.title}
-                          </h4>
-                          <p className="mt-2 text-xs leading-5 text-slate-300">
-                            {item.detail}
-                          </p>
-                          <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                            {item.time}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="grid gap-4 xl:grid-cols-[1.14fr_0.86fr]">
-                      <div className="space-y-4">
-                        <div className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
-                          <div className="rounded-[2rem] border border-cyan-400/15 bg-white/5 p-5 shadow-2xl shadow-cyan-950/20 backdrop-blur-xl">
-                            <div className="flex items-start justify-between gap-4">
-                              <div>
-                                <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-300/80">
-                                  Water Quality Health Score
-                                </p>
-                                <h4 className="mt-2 text-2xl font-black text-white">
-                                  {commandCenterModel.qualityScore}/100
-                                </h4>
-                                <p className="mt-2 text-sm text-slate-300">
-                                  Real-time composite score derived from sensor stability, alert pressure, and device health.
-                                </p>
-                              </div>
-                              <div className="relative h-32 w-32 shrink-0">
-                                <svg viewBox="0 0 120 120" className="h-32 w-32 -rotate-90">
-                                  <circle cx="60" cy="60" r="52" className="fill-none stroke-white/10" strokeWidth="12" />
-                                  <circle
-                                    cx="60"
-                                    cy="60"
-                                    r="52"
-                                    className="fill-none stroke-cyan-400"
-                                    strokeWidth="12"
-                                    strokeLinecap="round"
-                                    strokeDasharray={`${2 * Math.PI * 52} ${2 * Math.PI * 52}`}
-                                    strokeDashoffset={2 * Math.PI * 52 - (commandCenterModel.qualityScore / 100) * (2 * Math.PI * 52)}
-                                  />
-                                </svg>
-                                <div className="absolute inset-0 flex items-center justify-center text-center">
-                                  <div>
-                                    <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-                                      Health
-                                    </p>
-                                    <p className="text-xl font-black text-white">
-                                      {commandCenterModel.currentStateTone === "rose"
-                                        ? "Alert"
-                                        : commandCenterModel.currentStateTone === "amber"
-                                          ? "Watch"
-                                          : "Clear"}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                              {[
-                                { label: "Safe readings", value: `${commandCenterModel.safeReadings}` },
-                                { label: "Alert count", value: `${commandCenterModel.alertCount}` },
-                                { label: "Anomalies", value: `${commandCenterModel.anomalyCount}` },
-                              ].map((item) => (
-                                <div key={item.label} className="rounded-2xl border border-white/10 bg-slate-950/60 p-3">
-                                  <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">{item.label}</p>
-                                  <p className="mt-2 text-sm font-semibold text-white">{item.value}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <div className="rounded-[2rem] border border-rose-400/15 bg-rose-500/10 p-5 shadow-2xl shadow-rose-950/20 backdrop-blur-xl">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-rose-200/80">
-                                AI Risk Prediction
-                              </p>
-                              <div className="mt-4 flex items-end gap-4">
-                                <div>
-                                  <p className="text-3xl font-black text-white">{commandCenterModel.risk24h}%</p>
-                                  <p className="text-xs uppercase tracking-[0.22em] text-rose-200/80">24h</p>
-                                </div>
-                                <div>
-                                  <p className="text-3xl font-black text-white">{commandCenterModel.risk48h}%</p>
-                                  <p className="text-xs uppercase tracking-[0.22em] text-rose-200/80">48h</p>
-                                </div>
-                              </div>
-                              <div className="mt-4 space-y-2">
-                                {[commandCenterModel.risk24h, commandCenterModel.risk48h].map((value, index) => (
-                                  <div key={`${value}-${index}`} className="h-2 overflow-hidden rounded-full bg-white/10">
-                                    <div
-                                      className={`h-full rounded-full ${index === 0 ? "bg-cyan-400" : "bg-rose-400"}`}
-                                      style={{ width: `${value}%` }}
-                                    />
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-2xl shadow-slate-950/20 backdrop-blur-xl">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-emerald-200/80">
-                                Live Monitoring Status Banner
-                              </p>
-                              <div className="mt-4 rounded-2xl border border-emerald-400/15 bg-emerald-500/10 p-4">
-                                <p className="text-lg font-semibold text-white">
-                                  {commandCenterModel.currentStateLabel}
-                                </p>
-                                <p className="mt-2 text-sm leading-6 text-slate-300">
-                                  {waterAlerts.isLoading
-                                    ? "Listening to live alert telemetry..."
-                                    : commandCenterModel.alertCount > 0
-                                      ? "Active alerts are being triaged in real time."
-                                      : "No active alerts. Derived intelligence is monitoring sensor history for early warning signs."}
-                                </p>
-                                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-100">
-                                  <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1">Connection {connectionStatus}</span>
-                                  <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1">Zone {selectedDevice?.zone ?? "Unknown"}</span>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="rounded-[2rem] border border-slate-700/60 bg-slate-950/70 p-5 sm:col-span-2">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-amber-200/80">
-                                AI Root Cause Analysis
-                              </p>
-                              <div className="mt-3 space-y-3">
-                                {commandCenterModel.causeSignals.map((signal) => (
-                                  <div key={signal} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
-                                    {signal}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-4 lg:grid-cols-2">
-                          <div className="rounded-[2rem] border border-slate-700/60 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/20">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-200/80">
-                              Sensor Trend Intelligence
-                            </p>
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                              {commandCenterModel.sensorTrendCards.map((card) => (
-                                <div key={card.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                  <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">{card.label}</p>
-                                  <p className="mt-2 text-lg font-bold text-white">{card.value}</p>
-                                  <p className="mt-1 text-xs text-slate-300">{card.detail}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="rounded-[2rem] border border-cyan-400/15 bg-cyan-500/10 p-5 shadow-2xl shadow-cyan-950/20">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-100/80">
-                              Water Quality Radar Chart
-                            </p>
-                            <div className="mt-4 flex justify-center">
-                              <svg viewBox="0 0 240 240" className="h-64 w-full max-w-xs">
-                                <circle cx="120" cy="120" r="88" className="fill-none stroke-white/10" strokeWidth="1" />
-                                <circle cx="120" cy="120" r="64" className="fill-none stroke-white/10" strokeWidth="1" />
-                                <circle cx="120" cy="120" r="40" className="fill-none stroke-white/10" strokeWidth="1" />
-                                {commandCenterModel.radarMetrics.map((metric, index) => {
-                                  const angle = (-Math.PI / 2) + (index * (Math.PI * 2)) / commandCenterModel.radarMetrics.length;
-                                  const outerX = 120 + Math.cos(angle) * 88;
-                                  const outerY = 120 + Math.sin(angle) * 88;
-                                  const valueX = 120 + Math.cos(angle) * (metric.value / 100) * 88;
-                                  const valueY = 120 + Math.sin(angle) * (metric.value / 100) * 88;
-                                  const labelX = 120 + Math.cos(angle) * 108;
-                                  const labelY = 120 + Math.sin(angle) * 108;
-
-                                  return (
-                                    <g key={metric.label}>
-                                      <line x1="120" y1="120" x2={outerX} y2={outerY} className="stroke-white/15" strokeWidth="1" />
-                                      <circle cx={valueX} cy={valueY} r="3.5" className="fill-cyan-300" />
-                                      <text x={labelX} y={labelY} fill="rgba(226,232,240,0.9)" fontSize="10" textAnchor="middle" dominantBaseline="middle">
-                                        {metric.label}
-                                      </text>
-                                    </g>
-                                  );
-                                })}
-                                <polygon
-                                  points={commandCenterModel.radarMetrics
-                                    .map((metric, index) => {
-                                      const angle = (-Math.PI / 2) + (index * (Math.PI * 2)) / commandCenterModel.radarMetrics.length;
-                                      const x = 120 + Math.cos(angle) * (metric.value / 100) * 88;
-                                      const y = 120 + Math.sin(angle) * (metric.value / 100) * 88;
-                                      return `${x},${y}`;
-                                    })
-                                    .join(" ")}
-                                  className="fill-cyan-400/25 stroke-cyan-300"
-                                  strokeWidth="2"
-                                />
-                              </svg>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-                          <div className="rounded-[2rem] border border-slate-700/60 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/20">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-sky-200/80">
-                              Historical Trend Explorer
-                            </p>
-                            <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                                <WaterGraph
-                                  data={commandCenterModel.historicalTrendExplorer.tdsTrail.map((value, index) => ({
-                                    time: index + 1,
-                                    tds: value,
-                                  }))}
-                                  type="tds"
-                                  title="TDS trend"
-                                  color="#22d3ee"
-                                />
-                              </div>
-                              <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                                <WaterGraph
-                                  data={commandCenterModel.historicalTrendExplorer.recentSamples.map((sample, index) => ({
-                                    time: index + 1,
-                                    ph: sample.ph,
-                                    turbidity: sample.turbidity,
-                                  }))}
-                                  type="ph"
-                                  title="pH and turbidity trend"
-                                  color="#34d399"
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="rounded-[2rem] border border-slate-700/60 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/20">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-emerald-200/80">
-                              Smart Incident Timeline
-                            </p>
-                            <div className="mt-4 space-y-4">
-                              {commandCenterModel.liveActivityFeed.map((entry) => (
-                                <div key={entry.id} className="flex gap-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-                                  <div className={`mt-1 h-2.5 w-2.5 rounded-full ${entry.tone === "rose" ? "bg-rose-400" : entry.tone === "amber" ? "bg-amber-400" : entry.tone === "cyan" ? "bg-cyan-400" : "bg-emerald-400"}`} />
-                                  <div>
-                                    <p className="text-xs uppercase tracking-[0.22em] text-slate-400">{entry.label}</p>
-                                    <p className="mt-1 text-sm font-semibold text-white">{entry.title}</p>
-                                    <p className="mt-1 text-xs text-slate-300">{entry.detail}</p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-                          <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-2xl shadow-slate-950/20">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-amber-200/80">
-                              Predictive Maintenance
-                            </p>
-                            <div className="mt-4 space-y-3">
-                              {commandCenterModel.predictiveMaintenance.map((item) => (
-                                <div key={item.label} className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-                                  <div className="flex items-center justify-between gap-3">
-                                    <p className="text-sm font-semibold text-white">{item.label}</p>
-                                    <span className="text-sm font-bold text-cyan-200">{item.value}</span>
-                                  </div>
-                                  <p className="mt-2 text-xs text-slate-300">{item.detail}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="rounded-[2rem] border border-slate-700/60 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/20">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-rose-200/80">
-                              AI Recommendations Engine
-                            </p>
-                            <div className="mt-4 space-y-3">
-                              {commandCenterModel.recommendations.map((item, index) => (
-                                <div key={item} className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
-                                  <div className="mt-1 h-6 w-6 rounded-full bg-cyan-500/15 text-center text-xs font-bold leading-6 text-cyan-200">
-                                    {index + 1}
-                                  </div>
-                                  <p className="text-sm leading-6 text-slate-200">{item}</p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-                          <div className="rounded-[2rem] border border-slate-700/60 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/20">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-200/80">
-                              Alert Heatmap
-                            </p>
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                              {commandCenterModel.derivedHeatmap.map((zone) => (
-                                <div key={zone.name} className={`rounded-2xl border p-4 ${zone.tone === "amber" ? "border-amber-400/20 bg-amber-500/10" : "border-emerald-400/20 bg-emerald-500/10"}`}>
-                                  <p className="text-sm font-semibold text-white">{zone.name}</p>
-                                  <p className="mt-2 text-xs uppercase tracking-[0.22em] text-slate-300">{zone.devices} devices</p>
-                                  <p className="mt-1 text-sm text-slate-200">{zone.safe} safe / {zone.unsafe} unsafe</p>
-                                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-                                    <div className="h-full rounded-full bg-cyan-400" style={{ width: `${zone.avgScore}%` }} />
-                                  </div>
-                                  <p className="mt-2 text-xs text-slate-300">Avg zone score {zone.avgScore}/100</p>
-                                </div>
-                              ))}
-                            </div>
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Geo Zone Status Card</p>
-                                <p className="mt-2 text-lg font-bold text-white">{selectedDevice?.zone ?? "Unknown zone"}</p>
-                                <p className="mt-1 text-sm text-slate-300">Tracked against live device positions and latest readings.</p>
-                              </div>
-                              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Environmental Impact Insights</p>
-                                <p className="mt-2 text-lg font-bold text-white">{commandCenterModel.environmentalImpact.safeguardedLiters.toLocaleString()} L protected</p>
-                                <p className="mt-1 text-sm text-slate-300">{commandCenterModel.environmentalImpact.avoidedIncidents} incidents avoided, {commandCenterModel.environmentalImpact.co2Saved} kg CO2 saved.</p>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="space-y-4">
-                            <div className="rounded-[2rem] border border-slate-700/60 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/20">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-emerald-200/80">
-                                Severity Analytics
-                              </p>
-                              <div className="mt-4 space-y-3">
-                                {commandCenterModel.severityAnalytics.map((item) => (
-                                  <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                    <div className="flex items-center justify-between gap-3">
-                                      <p className="text-sm font-semibold text-white">{item.label}</p>
-                                      <p className="text-sm font-black text-cyan-200">{item.value}</p>
-                                    </div>
-                                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
-                                      <div className={`h-full rounded-full ${item.tone === "rose" ? "bg-rose-400" : item.tone === "amber" ? "bg-amber-400" : "bg-cyan-400"}`} style={{ width: `${Math.max(item.value * 20, 10)}%` }} />
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="rounded-[2rem] border border-slate-700/60 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/20">
-                              <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-blue-200/80">
-                                Resolution Performance Metrics
-                              </p>
-                              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                                {commandCenterModel.resolutionMetrics.map((item) => (
-                                  <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                    <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">{item.label}</p>
-                                    <p className="mt-2 text-lg font-bold text-white">{item.value}</p>
-                                    <p className="mt-1 text-xs text-slate-300">{item.detail}</p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-                          <div className="rounded-[2rem] border border-slate-700/60 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/20">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-sky-200/80">
-                              AI Root Cause + Action Plan
-                            </p>
-                            <div className="mt-4 rounded-2xl border border-cyan-400/15 bg-cyan-500/10 p-4 text-slate-200">
-                              <p className="text-sm font-semibold text-white">Immediate focus</p>
-                              <p className="mt-2 text-sm leading-6">{commandCenterModel.recommendations[0]}</p>
-                            </div>
-                            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Root cause drivers</p>
-                                <p className="mt-2 text-sm text-slate-200">{commandCenterModel.causeSignals.join(" ")}</p>
-                              </div>
-                              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Action</p>
-                                <p className="mt-2 text-sm text-slate-200">One click report, live triage, and predictive maintenance are ready for the operator workflow.</p>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="rounded-[2rem] border border-slate-700/60 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/20">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-amber-200/80">
-                              Live Alert Stream
-                            </p>
-                            <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-                              <AlertPanel
-                                alerts={waterAlerts.recentAlerts}
-                                currentLevel={waterAlerts.currentLevel}
-                                isLoading={waterAlerts.isLoading}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-2xl shadow-slate-950/20 backdrop-blur-xl">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-cyan-200/80">
-                            One Click Incident Report Generator
-                          </p>
-                          <p className="mt-3 text-sm leading-6 text-slate-300">
-                            Generate an operator-ready incident summary with the current state, root cause, prediction, and next action.
-                          </p>
-                          <Button
-                            type="button"
-                            onClick={handleGenerateIncidentReport}
-                            className="mt-4 w-full rounded-2xl bg-cyan-500 px-4 py-3 text-white shadow-lg shadow-cyan-950/20 hover:bg-cyan-400"
-                          >
-                            <DownloadCloud className="mr-2 h-4 w-4" />
-                            {incidentReportCopied ? "Copied to Clipboard" : "Copy Incident Report"}
-                          </Button>
-                        </div>
-
-                        <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-2xl shadow-slate-950/20 backdrop-blur-xl">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-emerald-200/80">
-                            Device Health Monitoring
-                          </p>
-                          <div className="mt-4 space-y-3">
-                            <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-                              <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Battery</p>
-                              <p className="mt-2 text-2xl font-black text-white">{commandCenterModel.deviceHealth.battery}%</p>
-                            </div>
-                            <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-                              <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Sync</p>
-                              <p className="mt-2 text-sm font-semibold text-white">{commandCenterModel.deviceHealth.syncStatus}</p>
-                              <p className="mt-1 text-xs text-slate-300">Connection {commandCenterModel.deviceHealth.connection}</p>
-                            </div>
-                            <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-                              <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Last reading</p>
-                              <p className="mt-2 text-sm font-semibold text-white">{commandCenterModel.deviceHealth.lastReading}</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 shadow-2xl shadow-slate-950/20 backdrop-blur-xl">
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-rose-200/80">
-                            Anomaly Detection Engine
-                          </p>
-                          <div className="mt-4 space-y-3">
-                            {commandCenterModel.causeSignals.slice(0, 3).map((signal) => (
-                              <div key={signal} className="rounded-2xl border border-white/10 bg-slate-950/70 p-4 text-sm text-slate-200">
-                                {signal}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {hydroAiOpen ? (
-                    <div className="fixed bottom-24 right-4 z-[60] w-[min(24rem,calc(100vw-2rem))] rounded-[2rem] border border-cyan-400/20 bg-slate-950/95 p-4 shadow-[0_30px_80px_-30px_rgba(34,211,238,0.55)] backdrop-blur-xl">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-cyan-300/80">
-                            Floating HydroAI Assistant
-                          </p>
-                          <h4 className="mt-1 text-lg font-bold text-white">Mission copiloting</h4>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setHydroAiOpen(false)}
-                          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-                          aria-label="Close HydroAI assistant"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                      <div className="mt-4 space-y-3">
-                        {commandCenterModel.recommendations.map((item) => (
-                          <div key={item} className="rounded-2xl border border-white/10 bg-white/5 p-3 text-sm leading-6 text-slate-200">
-                            {item}
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {[
-                          "Explain current risk",
-                          "Generate report",
-                          "Focus on root cause",
-                        ].map((prompt) => (
-                          <span key={prompt} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-300">
-                            {prompt}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </motion.section>
-              )}
-
               {activeTab === "Charts" && (
                 <motion.section
                   key="charts-page"
@@ -2898,6 +2337,15 @@ export const UserDashboard = () => {
                     </div>
                   </div>
                 </motion.section>
+              )}
+              {activeTab === "Alert Panel" && (
+                <Button
+                    type="button"
+                    onClick={() => navigate("/alert-panel")}
+                    className="rounded-full bg-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 hover:bg-cyan-600"
+                  >
+                    Open Alert Panel
+                  </Button>
               )}
 
               {activeTab === "Water Distribution" && (

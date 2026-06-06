@@ -1,1413 +1,768 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { toIsoTimestamp } from "@/lib/deviceStore";
 import {
-  AlertLevel,
-  WaterAlert,
-  WATER_THRESHOLDS,
-} from "@/services/alertService";
-import {
+  Activity,
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
   Bell,
   Brain,
   CheckCircle2,
-  Clock,
-  DownloadCloud,
-  Eye,
-  FileBarChart2,
-  Filter,
-  ChartLine,
-  RefreshCw,
-  Siren,
+  Clock3,
+  Droplet,
+  Flame,
+  Gauge,
   ShieldCheck,
-  Target,
-  TrendingUp,
-  Waves,
-  Zap,
+  Sparkles,
+  Thermometer,
+  Wifi,
 } from "lucide-react";
 
-interface AlertPanelProps {
-  alerts: WaterAlert[];
-  currentLevel: AlertLevel | null;
-  isLoading?: boolean;
-  onViewAlert?: (alert: WaterAlert) => void;
-  onAcknowledgeAlert?: (id: string) => void;
-  onResolveAlert?: (id: string) => void;
+const THRESHOLDS = {
+  tds: { safe: 300, warning: 450, danger: 600 },
+  ph: { min: 6.8, max: 7.6, warning: 6.5, danger: 6.2 },
+  turbidity: { safe: 3, warning: 6, danger: 10 },
+  temperature: { safeMin: 18, safeMax: 28, warning: 16, danger: 33 },
+};
+
+const initialParameters = {
+  tds: 342,
+  ph: 7.25,
+  turbidity: 4.4,
+  temperature: 24.8,
+};
+
+const initialAlerts = [
+  {
+    id: "a1",
+    title: "TDS spike detected",
+    severity: "Critical",
+    sensor: "TDS",
+    value: 588,
+    safeRange: "100-300 ppm",
+    triggeredAt: new Date(Date.now() - 3 * 60 * 1000),
+    confidence: 93,
+    message: "Rapid conductivity rise indicates filter breakthrough.",
+  },
+];
+
+const initialStream = [
+  {
+    id: "s1",
+    summary: "Pump station 4 telemetry aligned with alert trends.",
+    status: "Confirmed",
+    time: new Date(Date.now() - 15000),
+    tone: "cyan",
+  },
+  {
+    id: "s2",
+    summary: "AI flagged turbidity rise during last cycle.",
+    status: "Watching",
+    time: new Date(Date.now() - 32000),
+    tone: "amber",
+  },
+  {
+    id: "s3",
+    summary: "Sensor heartbeat is stable for 78 seconds.",
+    status: "Normal",
+    time: new Date(Date.now() - 47000),
+    tone: "emerald",
+  },
+];
+
+const initialTimeline = [
+  {
+    id: "t1",
+    title: "Threshold breach",
+    detail: "TDS exceeded 600 ppm in Delta Sector.",
+    time: new Date(Date.now() - 7 * 60 * 1000),
+    icon: AlertTriangle,
+    tone: "rose",
+  },
+  {
+    id: "t2",
+    title: "AI root cause issued",
+    detail: "Rapid TDS increase linked to filter degradation.",
+    time: new Date(Date.now() - 5 * 60 * 1000),
+    icon: Brain,
+    tone: "cyan",
+  },
+  {
+    id: "t3",
+    title: "Operator recommendation ready",
+    detail: "Inspect filtration unit and collect sample.",
+    time: new Date(Date.now() - 3 * 60 * 1000),
+    icon: ShieldCheck,
+    tone: "emerald",
+  },
+  {
+    id: "t4",
+    title: "Live alert stream updated",
+    detail: "New telemetry arrived from Sensor 12.",
+    time: new Date(Date.now() - 90 * 1000),
+    icon: Activity,
+    tone: "blue",
+  },
+];
+
+type SensorParameters = typeof initialParameters;
+type AlertEntry = typeof initialAlerts[number];
+type StreamEntry = typeof initialStream[number];
+type TimelineEntry = typeof initialTimeline[number];
+
+function formatTime(date: Date) {
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-type TimeWindow = "hour" | "day" | "week";
-type HistoryFilter = "today" | "7d" | "30d" | "critical" | "warning" | "resolved" | "all";
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
-type ChartState = {
-  label: string;
-  value: number;
-  tone: string;
-};
+function calculateRisk(parameters: SensorParameters) {
+  let risk = 0;
+  risk += clamp((parameters.tds - 200) / 4, 0, 45);
+  risk += clamp(Math.abs(parameters.ph - 7) * 12, 0, 25);
+  risk += clamp((parameters.turbidity - 1.5) * 6, 0, 20);
+  risk += parameters.temperature < 18 || parameters.temperature > 28 ? 15 : 0;
+  return clamp(Math.round(risk), 0, 100);
+}
 
-const formatTime = (timestampValue: unknown): string => {
-  const iso = toIsoTimestamp(timestampValue);
-  const date = iso
-    ? new Date(iso)
-    : typeof timestampValue === "number"
-      ? new Date(timestampValue)
-      : new Date(String(timestampValue));
+function determineStatus(risk: number) {
+  if (risk >= 70) return "CRITICAL";
+  if (risk >= 45) return "WARNING";
+  return "SAFE";
+}
 
-  if (Number.isNaN(date.getTime())) {
-    return "--";
+function getBadgeStyle(status: string) {
+  if (status === "CRITICAL") return "bg-rose-500/15 text-rose-500 border-rose-500/30";
+  if (status === "WARNING") return "bg-amber-500/15 text-amber-500 border-amber-500/30";
+  return "bg-cyan-500/15 text-cyan-500 border-cyan-500/30";
+}
+
+function getForecastTrend(risk: number) {
+  return {
+    oneHour: clamp(risk + 8 + Math.random() * 5, 0, 100),
+    sixHour: clamp(risk + 14 + Math.random() * 8, 0, 100),
+    day: clamp(risk + 20 + Math.random() * 10, 0, 100),
+  };
+}
+
+function deriveRootCause(parameters: SensorParameters) {
+  const issues: string[] = [];
+  if (parameters.tds > THRESHOLDS.tds.warning) {
+    issues.push("TDS rose sharply");
   }
-
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-};
-
-const formatDateTime = (timestampValue: unknown): string => {
-  const iso = toIsoTimestamp(timestampValue);
-  const date = iso
-    ? new Date(iso)
-    : typeof timestampValue === "number"
-      ? new Date(timestampValue)
-      : new Date(String(timestampValue));
-
-  if (Number.isNaN(date.getTime())) {
-    return "--";
+  if (parameters.turbidity > THRESHOLDS.turbidity.warning) {
+    issues.push("Turbidity climbed quickly");
   }
-
-  return date.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-};
-
-const getSeverityTone = (level: AlertLevel): string => {
-  switch (level) {
-    case AlertLevel.DANGER:
-      return "text-rose-300 bg-rose-500/15 border-rose-500/30";
-    case AlertLevel.WARNING:
-      return "text-amber-300 bg-amber-500/15 border-amber-500/30";
-    default:
-      return "text-emerald-300 bg-emerald-500/15 border-emerald-500/30";
+  if (parameters.ph < THRESHOLDS.ph.warning || parameters.ph > THRESHOLDS.ph.warning + 0.2) {
+    issues.push("pH drifted beyond neutral range");
   }
-};
+  const cause = issues.length > 0 ? issues.join(" and ") : "Telemetry remains within expected limits.";
+  const confidence = clamp(72 + issues.length * 8, 60, 96);
+  return {
+    cause: issues.length > 0 ? "Rapid parameter shift detected" : "No active anomaly detected",
+    rationale: issues.length > 0 ? `${cause} while pressure and flow held steady.` : "Systems are stable with no urgent trigger.",
+    confidence,
+    affected: issues.length > 0 ? ["TDS", "Turbidity", "pH"].filter((_, idx) => idx < issues.length) : ["Water network"],
+    trend: issues.length > 0 ? "Escalating" : "Stable",
+  };
+}
 
-const getAlertLabel = (level: AlertLevel): string => {
-  switch (level) {
-    case AlertLevel.DANGER:
-      return "Critical";
-    case AlertLevel.WARNING:
-      return "Warning";
-    default:
-      return "Info";
-  }
-};
-
-const getIntervalMinutes = (window: TimeWindow): number => {
-  switch (window) {
-    case "hour":
-      return 10;
-    case "day":
-      return 240;
-    case "week":
-      return 24 * 60;
-  }
-};
-
-const getWindowLabel = (window: TimeWindow): string => {
-  switch (window) {
-    case "hour":
-      return "Last hour";
-    case "day":
-      return "Last day";
-    case "week":
-      return "Last week";
-  }
-};
-
-export const AlertPanel: React.FC<AlertPanelProps> = ({
-  alerts,
-  currentLevel,
-  isLoading = false,
-  onViewAlert,
-  onAcknowledgeAlert,
-  onResolveAlert,
-}) => {
-  const [selectedWindow, setSelectedWindow] = useState<TimeWindow>("day");
-  const [selectedHistoryFilter, setSelectedHistoryFilter] = useState<HistoryFilter>("today");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
-  const [acknowledgedIds, setAcknowledgedIds] = useState<string[]>([]);
-  const [resolvedIds, setResolvedIds] = useState<string[]>([]);
-  const [incidentStart, setIncidentStart] = useState<number | null>(null);
-  const [clockTick, setClockTick] = useState(0);
-
-  const sortedAlerts = useMemo(
-    () => [...alerts].sort((a, b) => b.timestamp - a.timestamp),
-    [alerts],
-  );
-
-  const latestAlert = sortedAlerts[0] ?? null;
-  const previousAlert = sortedAlerts[1] ?? null;
-
-  const now = Date.now();
-  const alertTimeline = useMemo(() => {
-    const baseTimeline = sortedAlerts.slice(0, 6).map((alert, index) => {
-      const ageMinutes = Math.max(0, Math.round((now - alert.timestamp) / 60000));
-      const lifecycle =
-        alert.level === AlertLevel.DANGER
-          ? "Critical escalation"
-          : alert.level === AlertLevel.WARNING
-            ? "Operator warning"
-            : "Telemetry update";
-
-      return {
-        id: alert.id,
-        time: formatTime(alert.timestamp),
-        title: alert.message,
-        detail: lifecycle,
-        ageMinutes,
-        level: alert.level,
-        emphasis: index === 0,
-      };
-    });
-
-    if (baseTimeline.length === 0) {
-      return [
-        {
-          id: "system-normal",
-          time: "Now",
-          title: "System normal",
-          detail: "No active alert telemetry in the selected window.",
-          ageMinutes: 0,
-          level: AlertLevel.SAFE,
-          emphasis: true,
-        },
-      ];
-    }
-
-    return baseTimeline;
-  }, [sortedAlerts, now]);
-
-  const activeAlerts = useMemo(
-    () => sortedAlerts.filter((alert) => alert.level === AlertLevel.DANGER || alert.level === AlertLevel.WARNING),
-    [sortedAlerts],
-  );
-
-  const criticalAlerts = useMemo(
-    () => sortedAlerts.filter((alert) => alert.level === AlertLevel.DANGER),
-    [sortedAlerts],
-  );
-
-  const warningAlerts = useMemo(
-    () => sortedAlerts.filter((alert) => alert.level === AlertLevel.WARNING),
-    [sortedAlerts],
-  );
-
-  const resolvedAlerts = useMemo(
-    () => sortedAlerts.filter((alert) => now - alert.timestamp > 2 * 60 * 60 * 1000),
-    [sortedAlerts, now],
-  );
-
-  const infoAlerts = useMemo(
-    () => sortedAlerts.filter((alert) => now - alert.timestamp <= 2 * 60 * 60 * 1000 && alert.level === AlertLevel.WARNING),
-    [sortedAlerts, now],
-  );
-
-  const systemState = useMemo(() => {
-    if (currentLevel === AlertLevel.DANGER || criticalAlerts.length > 0) {
-      return "Critical Response";
-    }
-    if (currentLevel === AlertLevel.WARNING || warningAlerts.length > 0) {
-      return "Monitoring";
-    }
-    return "Stable";
-  }, [currentLevel, criticalAlerts.length, warningAlerts.length]);
-
-  const emergencyMode = systemState === "Critical Response";
-
-  useEffect(() => {
-    if (emergencyMode && incidentStart === null) {
-      setIncidentStart(Date.now());
-    }
-    if (!emergencyMode && incidentStart !== null) {
-      setIncidentStart(null);
-    }
-  }, [emergencyMode, incidentStart]);
-
-  useEffect(() => {
-    if (!emergencyMode && !incidentStart) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      setClockTick((value) => value + 1);
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [emergencyMode, incidentStart]);
-
-  useEffect(() => {
-    if (!selectedAlertId && latestAlert) {
-      setSelectedAlertId(latestAlert.id);
-    }
-  }, [latestAlert, selectedAlertId]);
-
-  const incidentElapsed = useMemo(() => {
-    if (!incidentStart) {
-      return "00:00";
-    }
-
-    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - incidentStart) / 1000));
-    const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
-    const seconds = String(elapsedSeconds % 60).padStart(2, "0");
-    return `${minutes}:${seconds}`;
-  }, [incidentStart, clockTick, emergencyMode]);
-
-  const selectedAlert = useMemo(
-    () => sortedAlerts.find((alert) => alert.id === selectedAlertId) ?? latestAlert,
-    [sortedAlerts, selectedAlertId, latestAlert],
-  );
-
-  const selectedAlertIsAcknowledged =
-    selectedAlert ? acknowledgedIds.includes(selectedAlert.id) : false;
-  const selectedAlertIsResolved = selectedAlert
-    ? resolvedIds.includes(selectedAlert.id)
-    : false;
-
-  const filteredAlerts = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-
-    return sortedAlerts.filter((alert) => {
-      const timestampAge = now - alert.timestamp;
-      const dayMs = 24 * 60 * 60 * 1000;
-      const weekMs = 7 * dayMs;
-
-      const matchesWindow =
-        selectedHistoryFilter === "all"
-          ? true
-          : selectedHistoryFilter === "today"
-            ? timestampAge <= dayMs
-            : selectedHistoryFilter === "7d"
-              ? timestampAge <= weekMs
-              : selectedHistoryFilter === "30d"
-                ? timestampAge <= 30 * dayMs
-                : selectedHistoryFilter === "critical"
-                  ? alert.level === AlertLevel.DANGER
-                  : selectedHistoryFilter === "warning"
-                    ? alert.level === AlertLevel.WARNING
-                    : selectedHistoryFilter === "resolved"
-                      ? timestampAge > 2 * 60 * 60 * 1000
-                      : true;
-
-      if (!matchesWindow) {
-        return false;
-      }
-
-      if (!query) {
-        return true;
-      }
-
-      const haystack = [
-        alert.message,
-        alert.deviceId,
-        getAlertLabel(alert.level),
-        alert.sentSMS ? "sms sent" : "sms pending",
-        formatDateTime(alert.timestamp),
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(query);
-    });
-  }, [sortedAlerts, now, selectedHistoryFilter, searchTerm]);
-
-  const filteredCriticalCount = filteredAlerts.filter((alert) => alert.level === AlertLevel.DANGER).length;
-  const filteredWarningCount = filteredAlerts.filter((alert) => alert.level === AlertLevel.WARNING).length;
-  const filteredResolvedCount = filteredAlerts.filter((alert) => now - alert.timestamp > 2 * 60 * 60 * 1000).length;
-  const filteredInfoCount = Math.max(0, filteredAlerts.length - filteredCriticalCount - filteredWarningCount - filteredResolvedCount);
-
-  const affectedSensors = useMemo(() => {
-    const counts = new Map<string, number>();
-
-    sortedAlerts.forEach((alert) => {
-      const reading = alert.readings || {};
-      const pairs: Array<[string, number | undefined]> = [
-        ["pH", reading.ph],
-        ["TDS", reading.tds],
-        ["Turbidity", reading.turbidity],
-      ];
-
-      pairs.forEach(([sensor, value]) => {
-        if (value !== undefined) {
-          counts.set(sensor, (counts.get(sensor) ?? 0) + 1);
-        }
-      });
-    });
-
-    return Array.from(counts.entries())
-      .map(([sensor, count]) => ({ sensor, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [sortedAlerts]);
-
-  const latestReading = latestAlert?.readings ?? {};
-
-  const rootCause = useMemo(() => {
-    if (!latestAlert) {
-      return {
-        cause: "No active anomaly detected",
-        confidence: 0,
-        impact: "Low",
-        affected: ["System"],
-        issue: "Stable telemetry",
-        recommendation: "Continue live monitoring and baseline checks.",
-      };
-    }
-
-    const tds = latestReading.tds;
-    const ph = latestReading.ph;
-    const turbidity = latestReading.turbidity;
-    const issueList: string[] = [];
-
-    if (typeof tds === "number" && tds > WATER_THRESHOLDS.TDS.danger) {
-      issueList.push(`TDS peaked at ${tds} ppm`);
-    }
-    if (typeof ph === "number" && (ph < WATER_THRESHOLDS.pH.min_safe || ph > WATER_THRESHOLDS.pH.max_safe)) {
-      issueList.push(`pH drifted to ${ph.toFixed(2)}`);
-    }
-    if (typeof turbidity === "number" && turbidity > WATER_THRESHOLDS.TURBIDITY.danger) {
-      issueList.push(`Turbidity reached ${turbidity} NTU`);
-    }
-
-    if (typeof tds === "number" && tds > WATER_THRESHOLDS.TDS.danger) {
-      return {
-        cause: "Possible filter clogging or media breakthrough",
-        confidence: Math.min(96, 78 + issueList.length * 6),
-        impact: "High",
-        affected: ["TDS sensor", "Filtration line"],
-        issue: `High TDS detected (${tds} ppm)`,
-        recommendation: "Inspect filter cartridge and verify inlet water quality.",
-      };
-    }
-
-    if (typeof ph === "number" && (ph < WATER_THRESHOLDS.pH.min_safe || ph > WATER_THRESHOLDS.pH.max_safe)) {
-      return {
-        cause: "Chemical dosing imbalance or calibration drift",
-        confidence: Math.min(95, 74 + issueList.length * 7),
-        impact: "Moderate",
-        affected: ["pH sensor", "Dosing system"],
-        issue: `pH outside safe window (${ph.toFixed(2)})`,
-        recommendation: "Run calibration cycle and validate dosing response.",
-      };
-    }
-
-    if (typeof turbidity === "number" && turbidity > WATER_THRESHOLDS.TURBIDITY.warning) {
-      return {
-        cause: "Sediment ingress or pre-filter bypass",
-        confidence: Math.min(93, 70 + issueList.length * 7),
-        impact: turbidity > WATER_THRESHOLDS.TURBIDITY.danger ? "High" : "Moderate",
-        affected: ["Turbidity sensor", "Pre-filter stage"],
-        issue: `Elevated turbidity (${turbidity} NTU)`,
-        recommendation: "Check pre-filtration and retest after flush cycle.",
-      };
-    }
-
-    return {
-      cause: latestAlert.message,
-      confidence: 68,
-      impact: emergencyMode ? "Moderate" : "Low",
-      affected: ["Water line"],
-      issue: "Threshold breach under review",
-      recommendation: "Inspect the device and confirm the next reading trend.",
-    };
-  }, [latestAlert, latestReading, emergencyMode]);
-
-  const actionPlan = useMemo(() => {
-    const base = [
-      { label: "Inspect filter cartridge", priority: "P1" },
-      { label: "Verify inlet water quality", priority: "P1" },
-      { label: "Run calibration cycle", priority: "P2" },
-      { label: "Monitor next 10 readings", priority: "P2" },
-      { label: "Re-test after maintenance", priority: "P3" },
-    ];
-
-    if (emergencyMode) {
-      return base;
-    }
-
-    return base.map((item, index) => ({
-      ...item,
-      priority: index < 2 ? "P2" : item.priority,
-    }));
-  }, [emergencyMode]);
-
-  const severitySeries: ChartState[] = useMemo(
-    () => [
-      { label: "Critical", value: filteredCriticalCount, tone: "from-rose-500 to-rose-400" },
-      { label: "Warning", value: filteredWarningCount, tone: "from-amber-500 to-amber-300" },
-      { label: "Info", value: filteredInfoCount, tone: "from-sky-500 to-cyan-300" },
-      { label: "Resolved", value: filteredResolvedCount, tone: "from-emerald-500 to-emerald-300" },
-    ],
-    [filteredCriticalCount, filteredWarningCount, filteredInfoCount, filteredResolvedCount],
-  );
-
-  const donutSegments = useMemo(() => {
-    const total = severitySeries.reduce((sum, item) => sum + item.value, 0) || 1;
-    let cursor = 0;
-
-    return severitySeries.map((item) => {
-      const size = (item.value / total) * 100;
-      const start = cursor;
-      cursor += size;
-      return {
-        ...item,
-        start,
-        end: cursor,
-      };
-    });
-  }, [severitySeries]);
-
-  const donutGradient = donutSegments
-    .map((segment) => {
-      const color =
-        segment.label === "Critical"
-          ? "rgba(244,63,94,0.95)"
-          : segment.label === "Warning"
-            ? "rgba(245,158,11,0.95)"
-            : segment.label === "Info"
-              ? "rgba(56,189,248,0.95)"
-              : "rgba(16,185,129,0.95)";
-      return `${color} ${segment.start}% ${segment.end}%`;
-    })
-    .join(", ");
-
-  const trendSeries = useMemo(() => {
-    const intervalMinutes = getIntervalMinutes(selectedWindow);
-    const bucketCount = selectedWindow === "week" ? 7 : 6;
-    const buckets = Array.from({ length: bucketCount }, (_, index) => ({
-      label: `${index + 1}`,
-      value: 0,
-    }));
-    const windowMs = intervalMinutes * bucketCount * 60 * 1000;
-
-    sortedAlerts.forEach((alert) => {
-      const age = now - alert.timestamp;
-      if (age > windowMs) {
-        return;
-      }
-
-      const bucketIndex = Math.min(
-        bucketCount - 1,
-        Math.floor(age / (intervalMinutes * 60 * 1000)),
-      );
-      const targetIndex = bucketCount - 1 - bucketIndex;
-      buckets[targetIndex].value += 1;
-    });
-
-    return buckets.map((bucket, index) => ({
-      ...bucket,
-      label:
-        selectedWindow === "hour"
-          ? `${(index + 1) * 10}m`
-          : selectedWindow === "day"
-            ? `${(index + 1) * 4}h`
-            : `${index + 1}d`,
-    }));
-  }, [sortedAlerts, selectedWindow, now]);
-
-  const prediction = useMemo(() => {
-    const latestCritical = latestAlert?.level === AlertLevel.DANGER;
-    const trendUp =
-      previousAlert && latestAlert && latestAlert.timestamp > previousAlert.timestamp;
-    const confidence = latestCritical ? 84 : warningAlerts.length > 0 ? 72 : 48;
-
-    let forecast24h = "Moderate";
-    let forecast48h = "Moderate";
-    let predictedIssue = "Stable filtration trend";
-
-    if (latestCritical) {
-      forecast24h = "High";
-      forecast48h = "Critical";
-      predictedIssue = "Filter efficiency drop";
-    } else if (warningAlerts.length > 0 && trendUp) {
-      forecast24h = "Moderate";
-      forecast48h = "High";
-      predictedIssue = "Sensor drift or dosing lag";
-    } else if (rootCause.cause.includes("TDS")) {
-      forecast24h = "Moderate";
-      forecast48h = "High";
-      predictedIssue = "Particulate loading increase";
-    }
-
-    return {
-      forecast24h,
-      forecast48h,
-      probability: confidence,
-      predictedIssue,
-      gauge: latestCritical ? 84 : warningAlerts.length > 2 ? 68 : 42,
-    };
-  }, [latestAlert, previousAlert, warningAlerts.length, rootCause.cause]);
-
-  const smartInsights = useMemo(() => {
-    const latestTds = latestReading.tds;
-    const previousTds = previousAlert?.readings?.tds;
-    const latestPh = latestReading.ph;
-    const previousPh = previousAlert?.readings?.ph;
-    const latestTurbidity = latestReading.turbidity;
-    const previousTurbidity = previousAlert?.readings?.turbidity;
-
+function deriveAlerts(parameters: SensorParameters) {
+  if (parameters.tds > THRESHOLDS.tds.danger) {
     return [
       {
-        title:
-          typeof latestTds === "number" && typeof previousTds === "number"
-            ? latestTds >= previousTds
-              ? `TDS increased ${Math.round(((latestTds - previousTds) / Math.max(previousTds, 1)) * 100)}% compared to previous reading`
-              : `TDS eased by ${Math.abs(Math.round(((latestTds - previousTds) / Math.max(previousTds, 1)) * 100))}%`
-            : "TDS telemetry remains under review",
-        trend:
-          typeof latestTds === "number" && typeof previousTds === "number"
-            ? latestTds >= previousTds
-              ? "up"
-              : "down"
-            : "flat",
-      },
-      {
-        title:
-          typeof latestPh === "number"
-            ? latestPh < WATER_THRESHOLDS.pH.min_safe
-              ? "pH approaching lower threshold"
-              : latestPh > WATER_THRESHOLDS.pH.max_safe
-                ? "pH above safe window"
-                : "pH is inside the safe operating envelope"
-            : "pH telemetry stable",
-        trend:
-          typeof latestPh === "number"
-            ? latestPh < WATER_THRESHOLDS.pH.min_safe || latestPh > WATER_THRESHOLDS.pH.max_safe
-              ? "up"
-              : "down"
-            : "flat",
-      },
-      {
-        title:
-          typeof latestTurbidity === "number" && typeof previousTurbidity === "number"
-            ? latestTurbidity <= previousTurbidity
-              ? "Turbidity improving"
-              : "Turbidity trending upward"
-            : "Turbidity stable",
-        trend:
-          typeof latestTurbidity === "number" && typeof previousTurbidity === "number"
-            ? latestTurbidity <= previousTurbidity
-              ? "down"
-              : "up"
-            : "flat",
-      },
-      {
-        title:
-          emergencyMode
-            ? "Emergency response mode is active"
-            : "System response remains within operating tolerance",
-        trend: emergencyMode ? "up" : "down",
+        id: "a-critical",
+        title: "Critical TDS breach",
+        severity: "Critical",
+        sensor: "TDS",
+        value: parameters.tds,
+        safeRange: "100-300 ppm",
+        triggeredAt: new Date(),
+        confidence: 94,
+        message: "Immediate filtration review required.",
       },
     ];
-  }, [latestReading, previousAlert, emergencyMode]);
-
-  const buildExportCsv = () => {
-    const rows = [
-      ["Time", "Device", "Alert", "Severity", "Status", "Resolution"],
-      ...filteredAlerts.map((alert) => {
-        const status = resolvedIds.includes(alert.id)
-          ? "Resolved"
-          : acknowledgedIds.includes(alert.id)
-            ? "Acknowledged"
-            : alert.level === AlertLevel.DANGER
-              ? "Active"
-              : "Open";
-        const resolution = resolvedIds.includes(alert.id)
-          ? "Closed by operator"
-          : acknowledgedIds.includes(alert.id)
-            ? "In review"
-            : "Pending";
-        return [
-          formatDateTime(alert.timestamp),
-          alert.deviceId,
-          alert.message,
-          getAlertLabel(alert.level),
-          status,
-          resolution,
-        ];
-      }),
+  }
+  if (parameters.turbidity > THRESHOLDS.turbidity.warning) {
+    return [
+      {
+        id: "a-warning",
+        title: "Turbidity threshold reached",
+        severity: "Warning",
+        sensor: "Turbidity",
+        value: parameters.turbidity,
+        safeRange: "0-3 NTU",
+        triggeredAt: new Date(),
+        confidence: 86,
+        message: "Sediment or algae activity is increasing.",
+      },
     ];
+  }
+  return [];
+}
 
-    const csv = rows
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+function deriveRecommendation(status: string, rootCause: ReturnType<typeof deriveRootCause>) {
+  if (status === "CRITICAL") {
+    return "Deploy emergency filtration checks, isolate the affected zone, and verify inlet water chemistry immediately.";
+  }
+  if (status === "WARNING") {
+    return "Inspect upstream filters, collect a sample, and prepare to ramp response if conditions worsen.";
+  }
+  return "Maintain standard monitoring cadence and continue telemetry validation.";
+}
 
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `alert-history-${selectedHistoryFilter}.csv`;
-    link.click();
-    window.URL.revokeObjectURL(url);
-  };
+function formatEventTime(date: Date) {
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
-  const toggleAcknowledge = (alert: WaterAlert) => {
-    setSelectedAlertId(alert.id);
-    setAcknowledgedIds((current) =>
-      current.includes(alert.id)
-        ? current.filter((id) => id !== alert.id)
-        : [...current, alert.id],
-    );
-    onAcknowledgeAlert?.(alert.id);
-  };
+function formatDateLabel(date: Date) {
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
 
-  const toggleResolve = (alert: WaterAlert) => {
-    setSelectedAlertId(alert.id);
-    setResolvedIds((current) =>
-      current.includes(alert.id)
-        ? current.filter((id) => id !== alert.id)
-        : [...current, alert.id],
-    );
-    onResolveAlert?.(alert.id);
-  };
+const motionCard = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+};
 
-  const severityDonut = `conic-gradient(${donutGradient})`;
-  const confidenceRing = `conic-gradient(rgba(34,211,238,0.98) ${rootCause.confidence}%, rgba(15,23,42,0.65) 0)`;
-  const predictionRing = `conic-gradient(rgba(251,113,133,0.95) ${prediction.gauge}%, rgba(15,23,42,0.65) 0)`;
-  const recoveryProgress = emergencyMode
-    ? Math.min(92, (resolvedAlerts.length * 18) + (infoAlerts.length * 8) + 10)
-    : 100;
+export default function AlertPanel() {
+  const [demoMode, setDemoMode] = useState(false);
+  const [parameters, setParameters] = useState(initialParameters);
+  const [alertStream, setAlertStream] = useState<StreamEntry[]>(initialStream);
+  const [timeline, setTimeline] = useState<TimelineEntry[]>(initialTimeline);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
 
-  const activeAlertCount = emergencyMode ? Math.max(1, activeAlerts.length) : activeAlerts.length;
-  const criticalCount = criticalAlerts.length;
-  const warningCount = warningAlerts.length;
-  const resolvedCount = Math.max(resolvedAlerts.length, !emergencyMode ? sortedAlerts.length : resolvedAlerts.length);
+  const riskScore = useMemo(() => calculateRisk(parameters), [parameters]);
+  const waterScore = useMemo(() => 100 - riskScore, [riskScore]);
+  const status = useMemo(() => determineStatus(riskScore), [riskScore]);
+  const badgeStyle = useMemo(() => getBadgeStyle(status), [status]);
+  const forecast = useMemo(() => getForecastTrend(riskScore), [riskScore]);
+  const rootCause = useMemo(() => deriveRootCause(parameters), [parameters]);
+  const activeAlerts = useMemo(() => deriveAlerts(parameters), [parameters]);
+  const recommendation = useMemo(() => deriveRecommendation(status, rootCause), [status, rootCause]);
+  const currentAlert = activeAlerts[0] ?? null;
+  const isNormal = currentAlert === null;
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (!demoMode) return;
+
+      setParameters((current) => {
+        const delta = () => (Math.random() - 0.5) * 0.1;
+        return {
+          tds: clamp(current.tds + delta() * 42, 120, 680),
+          ph: clamp(current.ph + delta() * 0.12, 6.4, 8.4),
+          turbidity: clamp(current.turbidity + delta() * 1.1, 0.8, 11),
+          temperature: clamp(current.temperature + delta() * 1.4, 16, 33),
+        };
+      });
+
+      setLastUpdated(new Date());
+      setAlertStream((current) => [
+        {
+          id: `stream-${Date.now()}`,
+          summary: `Telemetry refreshed for Sensor ${Math.ceil(Math.random() * 20)}.`,
+          status: Math.random() > 0.5 ? "Confirmed" : "Watching",
+          time: new Date(),
+          tone: Math.random() > 0.6 ? "cyan" : "amber",
+        },
+        ...current.slice(0, 6),
+      ]);
+
+      setTimeline((current) => [
+        {
+          id: `timeline-${Date.now()}`,
+          title: "Simulated alert event",
+          detail: "AI updated the response priority and confidence.",
+          time: new Date(),
+          icon: Sparkles,
+          tone: "cyan",
+        },
+        ...current.slice(0, 5),
+      ]);
+    }, 3000);
+
+    return () => window.clearInterval(interval);
+  }, [demoMode]);
+
+  useEffect(() => {
+    setLastUpdated(new Date());
+  }, [parameters]);
+
+  const forecastData = [
+    { label: "1h", value: forecast.oneHour, highlight: false },
+    { label: "6h", value: forecast.sixHour, highlight: riskScore >= 60 },
+    { label: "24h", value: forecast.day, highlight: riskScore >= 50 },
+  ];
+
+  const actions = useMemo(
+    () => [
+      {
+        id: "action-1",
+        title: "Inspect filtration unit",
+        priority: currentAlert?.severity === "Critical" ? "Critical" : "High",
+        impact: "High",
+        eta: "15 min",
+        reason: "Most likely cause: particle breakthrough in filter media.",
+      },
+      {
+        id: "action-2",
+        title: "Collect manual sample",
+        priority: "High",
+        impact: "Medium",
+        eta: "30 min",
+        reason: "Verify AI alert with lab-grade analysis.",
+      },
+      {
+        id: "action-3",
+        title: "Verify source water",
+        priority: "Medium",
+        impact: "Medium",
+        eta: "45 min",
+        reason: "Confirm whether upstream intake changed quality.",
+      },
+    ],
+    [currentAlert],
+  );
+
+  const statusGlow = status === "CRITICAL" ? "from-rose-600/30 to-rose-500/10" : status === "WARNING" ? "from-amber-500/30 to-amber-400/10" : "from-cyan-500/30 to-cyan-400/10";
 
   return (
-    <div className="space-y-4 text-slate-100">
-      {emergencyMode && (
-        <motion.div
-          initial={{ opacity: 0, y: -12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden rounded-2xl border border-rose-500/40 bg-rose-950/35 p-4 shadow-[0_20px_70px_-28px_rgba(244,63,94,0.65)]"
-        >
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(244,63,94,0.28),transparent_32%),radial-gradient(circle_at_bottom_left,rgba(251,113,133,0.16),transparent_28%)]" />
-          <div className="relative flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="rounded-full border border-rose-400/40 bg-rose-500/15 p-3 text-rose-300 shadow-[0_0_0_1px_rgba(244,63,94,0.2)]">
-                <Siren className="h-6 w-6 animate-pulse" />
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-rose-200/90">
-                  Emergency Response Mode
-                </p>
-                <h3 className="mt-1 text-xl font-black tracking-[-0.03em] text-white">
-                  Critical water quality event in progress
-                </h3>
-                <p className="mt-1 text-sm text-rose-100/80">
-                  AI is isolating root cause, prioritizing actions, and tracking recovery progress.
-                </p>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-center">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-rose-100/65">Incident Timer</p>
-                <p className="mt-1 text-lg font-black text-white">{incidentElapsed}</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-center">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-rose-100/65">System</p>
-                <p className="mt-1 text-sm font-semibold text-rose-200">Escalated</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-center">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-rose-100/65">Recovery</p>
-                <p className="mt-1 text-sm font-semibold text-white">{recoveryProgress}%</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-center">
-                <p className="text-[10px] uppercase tracking-[0.18em] text-rose-100/65">Priority</p>
-                <p className="mt-1 text-sm font-semibold text-rose-200">Immediate</p>
-              </div>
-            </div>
+    <main className="min-h-screen bg-white text-slate-950 dark:bg-slate-950 dark:text-white">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.32em] text-slate-500 dark:text-slate-400">
+              ALERT PANEL
+            </p>
+            <h1 className="text-4xl font-black tracking-tight text-slate-950 dark:text-white sm:text-5xl">
+              Emergency water response alert hub
+            </h1>
+            <p className="max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+              Live incident triage, root cause intelligence, and predictive action planning for high-stakes water safety operations.
+            </p>
           </div>
-        </motion.div>
-      )}
-
-      <section className="space-y-4 rounded-3xl border border-slate-800/90 bg-slate-950/70 p-4 shadow-[0_24px_70px_-40px_rgba(2,6,23,0.95)] backdrop-blur-xl sm:p-5">
-        <div className="relative overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(56,189,248,0.12),transparent_30%),radial-gradient(circle_at_left,rgba(244,63,94,0.08),transparent_26%)]" />
-          <div className="relative flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-3xl space-y-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-cyan-200/80">
-                Alert Command Header
-              </p>
-              <div className="flex flex-wrap items-center gap-3">
-                <h2 className="text-3xl font-black tracking-[-0.04em] text-white sm:text-4xl">
-                  Water Monitoring Command Center
-                </h2>
-                <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ${emergencyMode ? "border-rose-500/40 bg-rose-500/15 text-rose-100" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"}`}>
-                  {systemState}
-                </span>
-              </div>
-              <p className="max-w-2xl text-sm leading-6 text-slate-300">
-                Live incident triage, AI root cause analysis, and operator response controls for industrial water quality monitoring.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:min-w-[36rem]">
-              {[
-                { label: "Active Alerts", value: activeAlertCount, tone: "emerald" },
-                { label: "Critical Alerts", value: criticalCount, tone: "rose" },
-                { label: "Warning Alerts", value: warningCount, tone: "amber" },
-                { label: "Resolved Alerts", value: resolvedCount, tone: "sky" },
-              ].map((metric) => (
-                <div key={metric.label} className="rounded-2xl border border-slate-800/80 bg-slate-900/75 px-3 py-3 shadow-[0_12px_24px_-20px_rgba(15,23,42,0.9)]">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">{metric.label}</p>
-                  <p className={`mt-1 text-3xl font-black ${metric.tone === "emerald" ? "text-emerald-300" : metric.tone === "rose" ? "text-rose-300" : metric.tone === "amber" ? "text-amber-300" : "text-sky-300"}`}>
-                    {metric.value}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="relative mt-4 grid gap-3 md:grid-cols-3 xl:grid-cols-5">
-            {[
-              { label: "Last Alert Time", value: latestAlert ? formatDateTime(latestAlert.timestamp) : "--" },
-              { label: "Last Device Triggered", value: latestAlert?.deviceId ?? "--" },
-              { label: "Current System State", value: systemState },
-              { label: "Latest Severity", value: latestAlert ? getAlertLabel(latestAlert.level) : "None" },
-              { label: "Alert Volume", value: `${sortedAlerts.length} events` },
-            ].map((item) => (
-              <div key={item.label} className="rounded-2xl border border-slate-800/75 bg-white/5 px-4 py-3">
-                <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">{item.label}</p>
-                <p className="mt-1 text-sm font-semibold text-slate-100">{item.value}</p>
-              </div>
-            ))}
-          </div>
+          <button
+            type="button"
+            onClick={() => setDemoMode((current) => !current)}
+            className={`inline-flex items-center gap-3 rounded-full px-5 py-3 text-sm font-semibold transition ${
+              demoMode
+                ? "bg-cyan-600 text-slate-950 shadow-cyan-500/30"
+                : "bg-slate-950 text-white shadow-slate-900/20 dark:bg-white/10 dark:text-white"
+            }`}
+          >
+            <span className={`h-2.5 w-2.5 rounded-full ${demoMode ? "bg-white" : "bg-cyan-400"}`} />
+            {demoMode ? "Demo Mode On" : "Demo Mode Off"}
+          </button>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    Live Incident Timeline
-                  </p>
-                  <h3 className="mt-1 text-lg font-bold text-white">Command center event log</h3>
+        <motion.section
+          initial="hidden"
+          animate="visible"
+          variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.08 } } }}
+          className="mt-8 grid gap-6 xl:grid-cols-[1.5fr_1fr]"
+        >
+          <motion.div variants={motionCard} className="overflow-hidden rounded-[2rem] border border-slate-200/70 bg-slate-50/90 p-6 shadow-[0_20px_80px_-50px_rgba(15,23,42,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/80">
+            <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.24em] text-white shadow-lg shadow-cyan-500/10">
+                    {status}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.24em] text-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                    {currentAlert ? currentAlert.severity : "Normal"}
+                  </span>
                 </div>
-                <Clock className="h-5 w-5 text-cyan-300" />
-              </div>
-              <div className="mt-4 space-y-3">
-                {alertTimeline.map((event, index) => (
-                  <div key={event.id} className="flex items-start gap-3">
-                    <div className="flex w-20 shrink-0 flex-col items-end pt-0.5 text-right">
-                      <span className="text-xs font-semibold text-slate-300">{event.time}</span>
-                      <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">{event.ageMinutes ? `${event.ageMinutes}m ago` : "now"}</span>
+                <div className="space-y-2">
+                  <p className="text-sm uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">LIVE INCIDENT HEADER</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-950 dark:ring-white/10">
+                      <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Current device</p>
+                      <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">Sensor 12</p>
                     </div>
-                    <div className="relative flex-1 pb-3 pl-4">
-                      <div className="absolute left-0 top-1.5 h-full w-px bg-slate-700/80" />
-                      <div className={`absolute left-[-5px] top-1.5 h-2.5 w-2.5 rounded-full ${event.level === AlertLevel.DANGER ? "bg-rose-400" : event.level === AlertLevel.WARNING ? "bg-amber-400" : "bg-emerald-400"}`} />
-                      <div className={`rounded-2xl border p-3 ${event.emphasis ? "bg-white/8 border-slate-700/80" : "bg-white/4 border-slate-800/80"}`}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-white">{event.title}</p>
-                            <p className="mt-1 text-xs text-slate-400">{event.detail}</p>
-                          </div>
-                          <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${event.level === AlertLevel.DANGER ? "border-rose-500/30 bg-rose-500/12 text-rose-200" : event.level === AlertLevel.WARNING ? "border-amber-500/30 bg-amber-500/12 text-amber-200" : "border-emerald-500/30 bg-emerald-500/12 text-emerald-200"}`}>
-                            {getAlertLabel(event.level)}
-                          </span>
-                        </div>
+                    <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-950 dark:ring-white/10">
+                      <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Current zone</p>
+                      <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">Delta Sector Alpha</p>
+                    </div>
+                    <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-950 dark:ring-white/10">
+                      <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Water score</p>
+                      <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{waterScore}/100</p>
+                    </div>
+                    <div className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80 dark:bg-slate-950 dark:ring-white/10">
+                      <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Risk score</p>
+                      <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{riskScore}%</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                <div className="rounded-[1.8rem] bg-gradient-to-br from-cyan-500/10 to-slate-100 p-5 text-slate-950 shadow-lg shadow-cyan-500/10 dark:from-cyan-500/15 dark:to-slate-900/40 dark:text-white">
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-cyan-200/80">Connection</p>
+                  <div className="mt-3 flex items-center gap-3">
+                    <Wifi className="h-5 w-5 text-cyan-500" />
+                    <div>
+                      <p className="text-lg font-semibold">Connected</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-300">Live sensor feed active</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-[1.8rem] bg-gradient-to-br from-slate-950/80 to-slate-900/80 p-5 text-white shadow-lg shadow-cyan-500/10 dark:bg-slate-950/90">
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Last reading</p>
+                  <p className="mt-3 text-lg font-semibold">{formatTime(lastUpdated)}</p>
+                  <p className="mt-1 text-sm text-slate-400">Updated seconds ago</p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div variants={motionCard} className="rounded-[2rem] border border-slate-200/70 bg-slate-50/95 p-6 shadow-[0_20px_80px_-50px_rgba(15,23,42,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/85">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Active alert</p>
+                <h2 className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">{isNormal ? "System Operating Normally" : currentAlert.title}</h2>
+              </div>
+              <span className={`rounded-full border px-4 py-2 text-sm font-semibold uppercase tracking-[0.25em] ${isNormal ? "border-emerald-300/70 bg-emerald-500/10 text-emerald-700" : badgeStyle}`}>
+                {isNormal ? "SAFE" : currentAlert.severity.toUpperCase()}
+              </span>
+            </div>
+
+            <div className="mt-8 grid gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Triggered sensor</p>
+                  <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{isNormal ? "None" : currentAlert.sensor}</p>
+                </div>
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Current value</p>
+                  <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{isNormal ? "—" : currentAlert.value}{isNormal ? "" : currentAlert.sensor === "pH" ? " pH" : currentAlert.sensor === "TDS" ? " ppm" : " NTU"}</p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Safe range</p>
+                  <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{isNormal ? "All sensors nominal" : currentAlert.safeRange}</p>
+                </div>
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Alert confidence</p>
+                  <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{isNormal ? "—" : `${currentAlert.confidence}%`}</p>
+                </div>
+              </div>
+
+              {!isNormal ? (
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Triggered at</p>
+                  <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{formatTime(currentAlert.triggeredAt)}</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{currentAlert.message}</p>
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-emerald-200/80 bg-emerald-50 p-5 shadow-sm">
+                  <p className="text-sm font-semibold text-emerald-700">System Operating Normally</p>
+                  <p className="mt-2 text-sm text-emerald-600">No active high-priority alerts detected. Continue sustained monitoring.</p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </motion.section>
+
+        <motion.section
+          initial="hidden"
+          animate="visible"
+          variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.08 } } }}
+          className="mt-8 grid gap-6 lg:grid-cols-[1.4fr_1fr]"
+        >
+          <motion.div variants={motionCard} className="overflow-hidden rounded-[2rem] border border-slate-200/70 bg-slate-50/90 p-6 shadow-[0_20px_80px_-50px_rgba(15,23,42,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/85">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">AI Root Cause Analysis</p>
+                <h2 className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">Why did it happen?</h2>
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white px-3 py-2 text-sm font-semibold text-slate-700 dark:border-white/10 dark:bg-slate-950/80 dark:text-slate-200">
+                <Brain className="h-4 w-4 text-cyan-500" />
+                AI explanation
+              </div>
+            </div>
+
+            <div className="mt-8 grid gap-4 lg:grid-cols-[1fr_12rem]">
+              <div className="space-y-4">
+                <p className="text-sm text-slate-700 dark:text-slate-300">{rootCause.rationale}</p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                    <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Cause</p>
+                    <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{rootCause.cause}</p>
+                  </div>
+                  <div className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                    <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Trend</p>
+                    <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{rootCause.trend}</p>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                    <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Confidence</p>
+                    <p className="mt-3 text-3xl font-black text-slate-950 dark:text-white">{rootCause.confidence}%</p>
+                  </div>
+                  <div className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                    <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Affected</p>
+                    <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{rootCause.affected.join(", ")}</p>
+                  </div>
+                  <div className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                    <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Why</p>
+                    <p className="mt-3 text-lg font-semibold text-slate-950 dark:text-white">{rootCause.rationale.split(" ").slice(0, 6).join(" ")}...</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative rounded-[2rem] bg-slate-950/95 p-5 text-white shadow-lg shadow-cyan-500/10 dark:bg-slate-900/95">
+                <div className="absolute inset-x-6 top-6 h-20 rounded-full bg-gradient-to-r from-cyan-500/20 via-transparent to-slate-950/10 blur-2xl" />
+                <div className="relative flex h-52 items-center justify-center rounded-[2rem] bg-slate-900/95 ring-1 ring-white/10">
+                  <div className="absolute inset-9 rounded-full bg-slate-950/90" />
+                  <div className="absolute inset-11 rounded-full border border-cyan-500/20" />
+                  <div className="absolute inset-16 rounded-full border border-cyan-400/20" />
+                  <p className="relative text-4xl font-black text-white">{rootCause.confidence}%</p>
+                  <p className="relative mt-1 text-xs uppercase tracking-[0.28em] text-slate-400">AI confidence</p>
+                </div>
+                <div className="mt-5 flex flex-col gap-3 rounded-3xl bg-slate-950/90 p-4 text-sm text-slate-300">
+                  <div className="flex items-center justify-between">
+                    <span>Cause severity</span>
+                    <span className="font-semibold text-white">{currentAlert ? currentAlert.severity : "Low"}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Prediction certainty</span>
+                    <span className="font-semibold text-white">{rootCause.confidence}%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div variants={motionCard} className="rounded-[2rem] border border-slate-200/70 bg-slate-50/90 p-6 shadow-[0_20px_80px_-50px_rgba(15,23,42,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/85">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Risk Forecast</p>
+                <h2 className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">What happens next?</h2>
+              </div>
+              <div className="rounded-full border border-slate-200/80 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-600 dark:border-white/10 dark:bg-slate-950 dark:text-slate-300">
+                Predicted trend
+              </div>
+            </div>
+            <div className="mt-8 space-y-4">
+              <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Current risk</p>
+                    <p className="mt-2 text-4xl font-black text-slate-950 dark:text-white">{riskScore}%</p>
+                  </div>
+                  <div className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                    <Gauge className="h-5 w-5 text-cyan-500" />
+                    {status}
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {forecastData.map((point) => (
+                  <div key={point.label} className={`rounded-3xl border p-5 shadow-sm dark:border-white/10 ${point.highlight ? "border-cyan-400/40 bg-cyan-500/10" : "border-slate-200/80 bg-white dark:bg-slate-950/80"}`}>
+                    <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">{point.label} forecast</p>
+                    <p className={`mt-3 text-3xl font-black ${point.highlight ? "text-cyan-600" : "text-slate-950 dark:text-white"}`}>{point.value}%</p>
+                  </div>
+                ))}
+              </div>
+              <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                <p className="text-sm font-semibold text-slate-950 dark:text-white">Predicted trend</p>
+                <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{status === "CRITICAL" ? "Escalation and immediate response expected." : status === "WARNING" ? "Monitor closely and prepare corrective action." : "Stable with continued observation."}</p>
+              </div>
+            </div>
+          </motion.div>
+        </motion.section>
+
+        <motion.section
+          initial="hidden"
+          animate="visible"
+          variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.08 } } }}
+          className="mt-8 grid gap-6 xl:grid-cols-[1.3fr_0.9fr]"
+        >
+          <motion.div variants={motionCard} className="rounded-[2rem] border border-slate-200/70 bg-slate-50/90 p-6 shadow-[0_20px_80px_-50px_rgba(15,23,42,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/85">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">What-If Simulator</p>
+                <h2 className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">Test alternate sensor scenarios</h2>
+              </div>
+              <div className="rounded-full bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">Interactive</div>
+            </div>
+            <div className="mt-8 grid gap-6 lg:grid-cols-[1fr_0.8fr]">
+              <div className="space-y-6">
+                {([
+                  { label: "TDS", value: parameters.tds, min: 120, max: 680, step: 10, unit: "ppm" },
+                  { label: "pH", value: parameters.ph, min: 6.4, max: 8.4, step: 0.1, unit: "pH" },
+                  { label: "Turbidity", value: parameters.turbidity, min: 0.8, max: 11, step: 0.1, unit: "NTU" },
+                  { label: "Temperature", value: parameters.temperature, min: 16, max: 33, step: 0.1, unit: "°C" },
+                ] as Array<{ label: string; value: number; min: number; max: number; step: number; unit: string }>).map((field) => (
+                  <div key={field.label} className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">{field.label}</p>
+                        <p className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">{field.value.toFixed(field.step === 0.1 ? 1 : 0)} {field.unit}</p>
                       </div>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">Live</span>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    AI Root Cause Analysis
-                  </p>
-                  <h3 className="mt-1 text-lg font-bold text-white">Likely cause and impact</h3>
-                </div>
-                <div className="rounded-full border border-cyan-500/20 bg-cyan-500/10 p-3 text-cyan-200">
-                  <Brain className="h-5 w-5" />
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_13rem]">
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-slate-800/80 bg-white/5 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400">Cause</p>
-                    <p className="mt-2 text-base font-semibold text-white">{rootCause.cause}</p>
-                    <p className="mt-2 text-sm text-slate-400">{rootCause.issue}</p>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-2xl border border-slate-800/80 bg-white/5 p-3">
-                      <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Confidence</p>
-                      <p className="mt-2 text-xl font-black text-white">{rootCause.confidence}%</p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-800/80 bg-white/5 p-3">
-                      <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Impact</p>
-                      <p className="mt-2 text-xl font-black text-white">{rootCause.impact}</p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-800/80 bg-white/5 p-3">
-                      <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Affected</p>
-                      <p className="mt-2 text-sm font-semibold text-white">{rootCause.affected.join(", ")}</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-center">
-                  <div className="relative h-44 w-44 rounded-full border border-slate-800/80 bg-slate-950/80 p-4 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.02)]">
-                    <div className="absolute inset-4 rounded-full" style={{ background: confidenceRing }} />
-                    <div className="absolute inset-8 rounded-full border border-slate-800/80 bg-slate-950/95" />
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                      <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Confidence</p>
-                      <p className="mt-1 text-4xl font-black text-white">{rootCause.confidence}</p>
-                      <p className="text-xs text-slate-400">AI certainty</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    Recommended Action Plan
-                  </p>
-                  <h3 className="mt-1 text-lg font-bold text-white">Priority response checklist</h3>
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-slate-700/80 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200">
-                  <ShieldCheck className="h-4 w-4 text-emerald-300" />
-                  {emergencyMode ? "Immediate" : "Standard"}
-                </div>
-              </div>
-              <div className="mt-4 space-y-2">
-                {actionPlan.map((item, index) => (
-                  <div key={item.label} className="flex items-center justify-between rounded-2xl border border-slate-800/80 bg-white/5 px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-black ${index < 2 ? "bg-rose-500/20 text-rose-200" : "bg-emerald-500/15 text-emerald-200"}`}>
-                        {index + 1}
-                      </span>
-                      <span className="text-sm font-medium text-white">{item.label}</span>
-                    </div>
-                    <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${item.priority === "P1" ? "border-rose-500/30 bg-rose-500/12 text-rose-200" : item.priority === "P2" ? "border-amber-500/30 bg-amber-500/12 text-amber-200" : "border-slate-600 bg-slate-800/60 text-slate-300"}`}>
-                      {item.priority}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    Alert Feed
-                  </p>
-                  <h3 className="mt-1 text-lg font-bold text-white">Live scrolling alerts</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={buildExportCsv}
-                    className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/18"
-                  >
-                    <DownloadCloud className="h-4 w-4" />
-                    Export CSV
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-2 sm:grid-cols-[1.2fr_auto_auto_auto]">
-                <div className="rounded-2xl border border-slate-800/80 bg-white/5 px-3 py-2">
-                  <div className="flex items-center gap-2 text-slate-400">
-                    <Filter className="h-4 w-4" />
                     <input
-                      value={searchTerm}
-                      onChange={(event) => setSearchTerm(event.target.value)}
-                      placeholder="Search alerts, devices, or severity"
-                      className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
+                      type="range"
+                      min={field.min}
+                      max={field.max}
+                      step={field.step}
+                      value={field.value}
+                      onChange={(event) => setParameters((current) => ({
+                        ...current,
+                        [field.label.toLowerCase()]: Number(event.target.value),
+                      }))}
+                      className="mt-4 h-2 w-full cursor-pointer rounded-full bg-slate-200 accent-cyan-500 dark:bg-slate-700"
                     />
                   </div>
-                </div>
-                <select
-                  value={selectedHistoryFilter}
-                  onChange={(event) => setSelectedHistoryFilter(event.target.value as HistoryFilter)}
-                  className="rounded-2xl border border-slate-800/80 bg-slate-950/80 px-3 py-2 text-sm text-white outline-none"
-                >
-                  <option value="today">Today</option>
-                  <option value="7d">7 Days</option>
-                  <option value="30d">30 Days</option>
-                  <option value="critical">Critical</option>
-                  <option value="warning">Warning</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="all">All</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={buildExportCsv}
-                  className="rounded-2xl border border-slate-800/80 bg-slate-950/80 px-3 py-2 text-sm font-semibold text-slate-200"
-                >
-                  Export
-                </button>
-                <div className="flex items-center justify-end gap-2 text-xs text-slate-400 sm:justify-start">
-                  <span className="rounded-full border border-slate-700/80 bg-white/5 px-2 py-1">{filteredAlerts.length} results</span>
-                </div>
-              </div>
-
-              <div className="mt-4 max-h-[26rem] space-y-3 overflow-auto pr-1">
-                {isLoading ? (
-                  <div className="space-y-2">
-                    {[1, 2, 3].map((item) => (
-                      <div key={item} className="h-24 animate-pulse rounded-2xl border border-slate-800/80 bg-slate-800/60" />
-                    ))}
-                  </div>
-                ) : filteredAlerts.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-800/80 bg-slate-950/80 p-4 text-sm text-slate-400">
-                    No alerts match the current search and filter window.
-                  </div>
-                ) : (
-                  filteredAlerts.map((alert) => {
-                    const status = resolvedIds.includes(alert.id)
-                      ? "Resolved"
-                      : acknowledgedIds.includes(alert.id)
-                        ? "Acknowledged"
-                        : alert.level === AlertLevel.DANGER
-                          ? "Active"
-                          : "Open";
-
-                    return (
-                      <div
-                        key={alert.id}
-                        className={`rounded-2xl border p-4 transition ${selectedAlertId === alert.id ? "border-cyan-500/40 bg-cyan-500/8" : "border-slate-800/80 bg-white/5"}`}
-                      >
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${getSeverityTone(alert.level)}`}>
-                                {getAlertLabel(alert.level)}
-                              </span>
-                              <span className="rounded-full border border-slate-700/80 bg-slate-900/80 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-300">
-                                {status}
-                              </span>
-                              {alert.sentSMS && (
-                                <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-cyan-100">
-                                  SMS sent
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm font-semibold text-white">{alert.message}</p>
-                            <div className="flex flex-wrap gap-3 text-xs text-slate-400">
-                              <span className="inline-flex items-center gap-1">
-                                <Bell className="h-3.5 w-3.5" />
-                                {alert.deviceId}
-                              </span>
-                              <span className="inline-flex items-center gap-1">
-                                <Clock className="h-3.5 w-3.5" />
-                                {formatDateTime(alert.timestamp)}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedAlertId(alert.id);
-                                onViewAlert?.(alert);
-                              }}
-                              className="inline-flex items-center gap-2 rounded-full border border-slate-700/80 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:border-cyan-500/30 hover:bg-cyan-500/10"
-                            >
-                              <Eye className="h-4 w-4" />
-                              View Details
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => toggleAcknowledge(alert)}
-                              className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${acknowledgedIds.includes(alert.id) ? "border-emerald-500/30 bg-emerald-500/12 text-emerald-100" : "border-slate-700/80 bg-slate-950/70 text-slate-100 hover:border-emerald-500/30 hover:bg-emerald-500/10"}`}
-                            >
-                              Acknowledge
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => toggleResolve(alert)}
-                              className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition ${resolvedIds.includes(alert.id) ? "border-sky-500/30 bg-sky-500/12 text-sky-100" : "border-slate-700/80 bg-slate-950/70 text-slate-100 hover:border-sky-500/30 hover:bg-sky-500/10"}`}
-                            >
-                              <CheckCircle2 className="h-4 w-4" />
-                              Resolve
-                            </button>
-                          </div>
-                        </div>
-                        {selectedAlertId === alert.id && (
-                          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                            {[
-                              { label: "TDS", value: alert.readings.tds, suffix: "ppm" },
-                              { label: "pH", value: alert.readings.ph, suffix: "" },
-                              { label: "Turbidity", value: alert.readings.turbidity, suffix: " NTU" },
-                            ].map((metric) => (
-                              <div key={metric.label} className="rounded-2xl border border-slate-800/80 bg-slate-950/70 px-3 py-2 text-sm">
-                                <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">{metric.label}</p>
-                                <p className="mt-1 font-semibold text-white">
-                                  {typeof metric.value === "number" ? `${metric.value}${metric.suffix}` : "--"}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    Alert Analytics
-                  </p>
-                  <h3 className="mt-1 text-lg font-bold text-white">Severity and volume trends</h3>
-                </div>
-                <TrendingUp className="h-5 w-5 text-emerald-300" />
-              </div>
-
-              <div className="mt-4 space-y-4">
-                <div className="grid grid-cols-3 gap-2 text-xs font-semibold text-slate-300">
-                  {[
-                    ["Last hour", "hour"],
-                    ["Last day", "day"],
-                    ["Last week", "week"],
-                  ].map(([label, value]) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => setSelectedWindow(value as TimeWindow)}
-                      className={`rounded-full border px-3 py-2 transition ${selectedWindow === value ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-100" : "border-slate-700/80 bg-slate-950/70 text-slate-300"}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-[1fr_1.1fr]">
-                  <div className="rounded-2xl border border-slate-800/80 bg-slate-950/70 p-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-white">Alerts by severity</p>
-                      <ChartLine className="h-4 w-4 text-cyan-300" />
-                    </div>
-                    <div className="mt-4 space-y-3">
-                      {severitySeries.map((series) => {
-                        const total = severitySeries.reduce((sum, item) => sum + item.value, 0) || 1;
-                        const percentage = Math.round((series.value / total) * 100);
-                        return (
-                          <div key={series.label}>
-                            <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
-                              <span>{series.label}</span>
-                              <span>{series.value}</span>
-                            </div>
-                            <div className="h-2 overflow-hidden rounded-full bg-slate-800">
-                              <div
-                                className={`h-full rounded-full bg-gradient-to-r ${series.tone}`}
-                                style={{ width: `${Math.max(6, percentage)}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-800/80 bg-slate-950/70 p-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-white">Alerts over time</p>
-                      <RefreshCw className="h-4 w-4 text-slate-400" />
-                    </div>
-                    <div className="mt-4 flex h-40 items-end gap-2 rounded-2xl border border-slate-800/80 bg-white/5 p-3">
-                      {trendSeries.map((item) => {
-                        const max = Math.max(...trendSeries.map((entry) => entry.value), 1);
-                        const height = Math.max(8, (item.value / max) * 100);
-                        return (
-                          <div key={item.label} className="flex flex-1 flex-col items-center gap-2">
-                            <div className="flex h-28 w-full items-end justify-center rounded-xl bg-slate-900/70 px-1">
-                              <div className="w-full rounded-lg bg-gradient-to-t from-cyan-500 to-sky-300" style={{ height: `${height}%` }} />
-                            </div>
-                            <span className="text-[10px] text-slate-500">{item.label}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <p className="mt-3 text-xs text-slate-400">{getWindowLabel(selectedWindow)} trend bucketed from current alert telemetry.</p>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-800/80 bg-slate-950/70 p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-white">Most affected sensors</p>
-                    <Target className="h-4 w-4 text-emerald-300" />
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {[
-                      { sensor: "pH", active: affectedSensors.find((item) => item.sensor === "pH")?.count ?? 0 },
-                      { sensor: "TDS", active: affectedSensors.find((item) => item.sensor === "TDS")?.count ?? 0 },
-                      { sensor: "Turbidity", active: affectedSensors.find((item) => item.sensor === "Turbidity")?.count ?? 0 },
-                      {
-                        sensor: "Temperature",
-                        active: sortedAlerts.some((alert) => alert.message.toLowerCase().includes("temperature")) ? 1 : 0,
-                      },
-                    ].map((sensor) => (
-                      <div key={sensor.sensor} className="rounded-2xl border border-slate-800/80 bg-white/5 p-3">
-                        <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">{sensor.sensor}</p>
-                        <p className="mt-1 text-2xl font-black text-white">{sensor.active}</p>
-                        <p className="mt-1 text-xs text-slate-400">Monitored in current incident set</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    Prediction Engine
-                  </p>
-                  <h3 className="mt-1 text-lg font-bold text-white">AI risk forecast</h3>
-                </div>
-                <Zap className="h-5 w-5 text-amber-300" />
-              </div>
-              <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_11rem]">
-                <div className="space-y-3 rounded-2xl border border-slate-800/80 bg-white/5 p-4">
-                  <div className="flex items-center justify-between text-sm text-slate-300">
-                    <span>Next 24 Hours</span>
-                    <strong className="text-white">{prediction.forecast24h}</strong>
-                  </div>
-                  <div className="flex items-center justify-between text-sm text-slate-300">
-                    <span>Next 48 Hours</span>
-                    <strong className="text-white">{prediction.forecast48h}</strong>
-                  </div>
-                  <div className="flex items-center justify-between text-sm text-slate-300">
-                    <span>Probability</span>
-                    <strong className="text-white">{prediction.probability}%</strong>
-                  </div>
-                  <div className="rounded-2xl border border-slate-800/80 bg-slate-950/70 p-3">
-                    <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Predicted Issue</p>
-                    <p className="mt-1 text-sm font-semibold text-white">{prediction.predictedIssue}</p>
-                  </div>
-                </div>
-                <div className="flex items-center justify-center">
-                  <div className="relative h-40 w-40 rounded-full border border-slate-800/80 bg-slate-950/80 p-4">
-                    <div className="absolute inset-4 rounded-full" style={{ background: predictionRing }} />
-                    <div className="absolute inset-8 rounded-full border border-slate-800/80 bg-slate-950/95" />
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                      <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Risk Score</p>
-                      <p className="mt-1 text-4xl font-black text-white">{prediction.gauge}</p>
-                      <p className="text-xs text-slate-400">24h forecast</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    Smart Insights
-                  </p>
-                  <h3 className="mt-1 text-lg font-bold text-white">AI pattern cards</h3>
-                </div>
-                <Bell className="h-5 w-5 text-sky-300" />
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                {smartInsights.map((insight) => (
-                  <div key={insight.title} className="rounded-2xl border border-slate-800/80 bg-white/5 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-white">{insight.title}</p>
-                      {insight.trend === "up" ? (
-                        <ArrowUpRight className="h-4 w-4 text-rose-300" />
-                      ) : insight.trend === "down" ? (
-                        <ArrowDownRight className="h-4 w-4 text-emerald-300" />
-                      ) : (
-                        <ShieldCheck className="h-4 w-4 text-slate-400" />
-                      )}
-                    </div>
-                  </div>
                 ))}
               </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    Severity Distribution
-                  </p>
-                  <h3 className="mt-1 text-lg font-bold text-white">Operational mix</h3>
-                </div>
-                <FileBarChart2 className="h-5 w-5 text-slate-300" />
-              </div>
-              <div className="mt-4 grid gap-4 md:grid-cols-[13rem_1fr] md:items-center">
-                <div className="mx-auto flex h-52 w-52 items-center justify-center rounded-full border border-slate-800/80 bg-slate-950/80 p-4">
-                  <div className="relative h-full w-full rounded-full" style={{ background: severityDonut }}>
-                    <div className="absolute inset-[18%] rounded-full border border-slate-800/80 bg-slate-950/95" />
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-                      <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Total</p>
-                      <p className="mt-1 text-4xl font-black text-white">{filteredAlerts.length}</p>
+              <div className="space-y-4">
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Instant outcome</p>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-3xl bg-slate-100 p-4 dark:bg-slate-900">
+                      <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Risk</p>
+                      <p className="mt-2 text-3xl font-black text-slate-950 dark:text-white">{riskScore}%</p>
+                    </div>
+                    <div className="rounded-3xl bg-slate-100 p-4 dark:bg-slate-900">
+                      <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Quality</p>
+                      <p className="mt-2 text-3xl font-black text-slate-950 dark:text-white">{waterScore}</p>
                     </div>
                   </div>
                 </div>
-                <div className="space-y-3">
-                  {severitySeries.map((series) => {
-                    const total = severitySeries.reduce((sum, item) => sum + item.value, 0) || 1;
-                    const percent = Math.round((series.value / total) * 100);
-                    return (
-                      <div key={series.label}>
-                        <div className="mb-1 flex items-center justify-between text-xs text-slate-400">
-                          <span>{series.label}</span>
-                          <span>{series.value} alerts</span>
-                        </div>
-                        <div className="h-2 overflow-hidden rounded-full bg-slate-800">
-                          <div
-                            className={`h-full rounded-full bg-gradient-to-r ${series.tone}`}
-                            style={{ width: `${Math.max(4, percent)}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/80">
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Safety status</p>
+                  <p className="mt-3 text-xl font-semibold text-slate-950 dark:text-white">{status}</p>
+                  <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">{recommendation}</p>
                 </div>
               </div>
             </div>
+          </motion.div>
 
-            <div className="rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                    Alert History
-                  </p>
-                  <h3 className="mt-1 text-lg font-bold text-white">Searchable resolution table</h3>
-                </div>
-                <button
-                  type="button"
-                  onClick={buildExportCsv}
-                  className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/18"
-                >
-                  <DownloadCloud className="h-4 w-4" />
-                  Export CSV
-                </button>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-300">
-                {[
-                  ["Today", "today"],
-                  ["7 Days", "7d"],
-                  ["30 Days", "30d"],
-                  ["Critical", "critical"],
-                  ["Warning", "warning"],
-                  ["Resolved", "resolved"],
-                ].map(([label, value]) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setSelectedHistoryFilter(value as HistoryFilter)}
-                    className={`rounded-full border px-3 py-2 transition ${selectedHistoryFilter === value ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-100" : "border-slate-700/80 bg-slate-950/70 text-slate-300"}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950/70">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="bg-white/5 text-xs uppercase tracking-[0.16em] text-slate-400">
-                    <tr>
-                      <th className="px-4 py-3">Time</th>
-                      <th className="px-4 py-3">Device</th>
-                      <th className="px-4 py-3">Alert</th>
-                      <th className="px-4 py-3">Severity</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Resolution</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredAlerts.map((alert) => {
-                      const status = resolvedIds.includes(alert.id)
-                        ? "Resolved"
-                        : acknowledgedIds.includes(alert.id)
-                          ? "Acknowledged"
-                          : alert.level === AlertLevel.DANGER
-                            ? "Active"
-                            : "Open";
-
-                      return (
-                        <tr key={`history-${alert.id}`} className="border-t border-slate-800/80 text-slate-200">
-                          <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(alert.timestamp)}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">{alert.deviceId}</td>
-                          <td className="px-4 py-3">{alert.message}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">{getAlertLabel(alert.level)}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">{status}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            {resolvedIds.includes(alert.id)
-                              ? "Closed by operator"
-                              : acknowledgedIds.includes(alert.id)
-                                ? "Under review"
-                                : "Pending"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-800/80 bg-slate-900/70 p-4">
-            <div className="flex items-center justify-between gap-3">
+          <motion.div variants={motionCard} className="rounded-[2rem] border border-slate-200/70 bg-slate-50/90 p-6 shadow-[0_20px_80px_-50px_rgba(15,23,42,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/85">
+            <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
-                  System Recovery
-                </p>
-                <h3 className="mt-1 text-lg font-bold text-white">Recovery progress tracking</h3>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">AI Recommendation Engine</p>
+                <h2 className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">What should be done now?</h2>
               </div>
-              <Target className="h-5 w-5 text-emerald-300" />
+              <div className="rounded-full bg-slate-100 px-3 py-2 text-sm font-semibold uppercase tracking-[0.25em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                Action plan
+              </div>
             </div>
-            <div className="mt-4 space-y-3">
-              <div className="h-3 overflow-hidden rounded-full bg-slate-800">
-                <div
-                  className={`h-full rounded-full ${emergencyMode ? "bg-gradient-to-r from-rose-500 to-amber-400" : "bg-gradient-to-r from-emerald-500 to-cyan-400"}`}
-                  style={{ width: `${recoveryProgress}%` }}
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3 text-sm text-slate-300">
-                <div className="rounded-2xl border border-slate-800/80 bg-white/5 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Acknowledged</p>
-                  <p className="mt-1 text-lg font-black text-white">{acknowledgedIds.length}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-800/80 bg-white/5 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Resolved</p>
-                  <p className="mt-1 text-lg font-black text-white">{resolvedIds.length}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-800/80 bg-white/5 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Latest Device</p>
-                  <p className="mt-1 text-lg font-black text-white">{latestAlert?.deviceId ?? "--"}</p>
-                </div>
-              </div>
-              <p className="text-xs text-slate-400">
-                Recovery progress is estimated from resolved alerts, updated telemetry, and current severity distribution.
-              </p>
+            <div className="mt-8 space-y-4">
+              {actions.map((action, index) => (
+                <motion.div
+                  key={action.id}
+                  whileHover={{ y: -4 }}
+                  className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm transition dark:border-white/10 dark:bg-slate-950/80"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-base font-semibold text-slate-950 dark:text-white">{action.title}</p>
+                      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{action.reason}</p>
+                    </div>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] ${action.priority === "Critical" ? "bg-rose-500/10 text-rose-600" : action.priority === "High" ? "bg-amber-500/10 text-amber-600" : "bg-cyan-500/10 text-cyan-600"}`}>
+                      {action.priority}
+                    </span>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-600 dark:text-slate-300">
+                    <div className="inline-flex items-center gap-2 rounded-2xl bg-slate-100 px-3 py-2 dark:bg-slate-800">
+                      <Clock3 className="h-4 w-4 text-slate-500" />
+                      <span>{action.eta}</span>
+                    </div>
+                    <div className="inline-flex items-center gap-2 rounded-2xl bg-slate-100 px-3 py-2 dark:bg-slate-800">
+                      <ShieldCheck className="h-4 w-4 text-cyan-500" />
+                      <span>{action.impact} impact</span>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
             </div>
-          </div>
-        </div>
-      </section>
-    </div>
+          </motion.div>
+        </motion.section>
+
+        <motion.section
+          initial="hidden"
+          animate="visible"
+          variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.08 } } }}
+          className="mt-8 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]"
+        >
+          <motion.div variants={motionCard} className="rounded-[2rem] border border-slate-200/70 bg-slate-50/90 p-6 shadow-[0_20px_80px_-50px_rgba(15,23,42,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/85">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Incident Timeline</p>
+                <h2 className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">What happened?</h2>
+              </div>
+              <div className="rounded-full bg-slate-100 px-3 py-2 text-sm font-semibold uppercase tracking-[0.25em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                Live events
+              </div>
+            </div>
+            <div className="mt-8 space-y-4">
+              {timeline.map((event) => {
+                const Icon = event.icon;
+                const toneStyle = event.tone === "rose" ? "bg-rose-500/10 text-rose-500" : event.tone === "cyan" ? "bg-cyan-500/10 text-cyan-500" : event.tone === "emerald" ? "bg-emerald-500/10 text-emerald-500" : "bg-slate-100 text-slate-700";
+                return (
+                  <motion.div
+                    key={event.id}
+                    whileHover={{ y: -2 }}
+                    className="rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-950/80"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className={`mt-1 flex h-12 w-12 items-center justify-center rounded-3xl border ${toneStyle}`}>
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <p className="text-lg font-semibold text-slate-950 dark:text-white">{event.title}</p>
+                          <span className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{formatTime(event.time)}</span>
+                        </div>
+                        <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{event.detail}</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          </motion.div>
+
+          <motion.div variants={motionCard} className="rounded-[2rem] border border-slate-200/70 bg-slate-50/90 p-6 shadow-[0_20px_80px_-50px_rgba(15,23,42,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/85">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500 dark:text-slate-400">Live Alert Stream</p>
+                <h2 className="mt-2 text-2xl font-bold text-slate-950 dark:text-white">Latest feed</h2>
+              </div>
+              <div className="rounded-full bg-slate-100 px-3 py-2 text-sm font-semibold uppercase tracking-[0.25em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                Auto update
+              </div>
+            </div>
+            <div className="mt-8 space-y-3">
+              {alertStream.map((entry) => (
+                <motion.div
+                  key={entry.id}
+                  whileHover={{ y: -2 }}
+                  className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/80"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-950 dark:text-white">{entry.summary}</p>
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${entry.tone === "amber" ? "bg-amber-100 text-amber-700" : entry.tone === "cyan" ? "bg-cyan-100 text-cyan-700" : "bg-emerald-100 text-emerald-700"}`}>
+                      {entry.status}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <Clock3 className="h-3.5 w-3.5" />
+                    <span>{formatTime(entry.time)} • real-time update</span>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        </motion.section>
+      </div>
+    </main>
   );
-};
+}

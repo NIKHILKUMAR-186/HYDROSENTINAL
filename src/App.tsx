@@ -17,6 +17,7 @@ import { firebaseSetupInfo, isFirebaseConfigured } from "./firebase";
 const Login = lazy(() => import("./pages/Login.tsx"));
 const Index = lazy(() => import("./pages/Index.tsx"));
 const UserDashboard = lazy(() => import("./pages/UserDashboard.tsx"));
+const AlertPanel = lazy(() => import("./components/AlertPanel.tsx"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel.tsx"));
 const Help = lazy(() => import("./pages/Help.tsx"));
 const Profile = lazy(() => import("./pages/Profile.tsx"));
@@ -176,6 +177,16 @@ const AppRoutes = () => {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/alert-panel"
+          element={
+            <ProtectedRoute requiredRole="user">
+              <AlertPanel />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/command-center" element={<Navigate to="/alert-panel" replace />} />
 
         {/* <Route path="/premium-showcase" element={<PremiumShowcase />} /> */}
 
