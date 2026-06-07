@@ -19,6 +19,7 @@ export type MobileSidebarTab =
   | "Overview"
   | "Charts"
   | "Water Distribution"
+  | "Alert Panel"
   | "Hardware"
   | "AI"
   | "Cloud"

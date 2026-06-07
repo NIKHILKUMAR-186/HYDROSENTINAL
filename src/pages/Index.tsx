@@ -218,6 +218,8 @@ const TEAM = [
       "Device testing",
       "Field data collection",
     ],
+    github: "https://github.com/SAVERA-123",
+    linkedin: "https://www.linkedin.com/in/himanshu-sourabh-4a940a375",
   },
   {
     name: "HIMANSHU KUMAR",
@@ -226,6 +228,8 @@ const TEAM = [
     intro:
       "This member supports backend architecture, data handling, and logic that keeps the HydroSentinel monitoring system stable and useful for users.",
     skills: ["Backend support", "Data structure", "API logic", "Testing"],
+    github: "https://github.com/SAVERA-123",
+    linkedin: "https://www.linkedin.com/in/himanshu-sourabh-4a940a375",
   },
   {
     name: "KHUSHI KUMARI",
@@ -234,6 +238,8 @@ const TEAM = [
     intro:
       "This member contributes to the frontend experience, making the project details, dashboard screens, and user controls clear and easy to use.",
     skills: ["Frontend components", "UI polish", "Accessibility", "Layout"],
+    github: "https://github.com/khushikumari9",
+    linkedin: "https://www.linkedin.com/in/khushi-kumari09",
   },
 ];
 
