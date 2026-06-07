@@ -18,6 +18,7 @@ import { SensorCard } from "@/components/SensorCard";
 import { WaterGraph } from "@/components/WaterGraph";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import AlertPanel from "@/components/AlertPanel";
 import MobileHeader from "@/components/MobileHeader";
 import MobileSidebar, { MobileSidebarTab } from "@/components/MobileSidebar";
 import FloatingSyncWidget from "@/components/FloatingSyncWidget";
@@ -1816,12 +1817,17 @@ export const UserDashboard = () => {
             <button
               key={label}
               type="button"
-              onClick={() =>
-                setSelectedInfoPanel(
-                  label as "Profile" | "Alerts" | "Announcements",
-                )
-              }
-              className={`group relative flex h-11 w-11 items-center justify-center rounded-full shadow-sm shadow-slate-950/20 transition ${selectedInfoPanel === label ? "bg-cyan-500/20 text-cyan-200 ring-2 ring-cyan-400/30" : "bg-slate-900/80 text-slate-300 hover:bg-cyan-500/20 hover:text-cyan-200"}`}
+              onClick={() => {
+                if (label === "Alerts") {
+                  setActiveTab("Alert Panel");
+                  setSelectedInfoPanel(null);
+                } else {
+                  setSelectedInfoPanel(
+                    label as "Profile" | "Alerts" | "Announcements",
+                  );
+                }
+              }}
+              className={`group relative flex h-11 w-11 items-center justify-center rounded-full shadow-sm shadow-slate-950/20 transition ${label === "Alerts" ? activeTab === "Alert Panel" ? "bg-cyan-500/20 text-cyan-200 ring-2 ring-cyan-400/30" : "bg-slate-900/80 text-slate-300 hover:bg-cyan-500/20 hover:text-cyan-200" : selectedInfoPanel === label ? "bg-cyan-500/20 text-cyan-200 ring-2 ring-cyan-400/30" : "bg-slate-900/80 text-slate-300 hover:bg-cyan-500/20 hover:text-cyan-200"}`}
               aria-label={label}
               title={label}
             >
@@ -2525,7 +2531,7 @@ export const UserDashboard = () => {
                       </p>
                       <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
                         {latest
-                          ? `Latest pH ${latest.ph}, TDS ${latest.tds} ppm, Turbidity ${latest.turbidity} NTU, Temperature ${latest.temperature} ┬░C`
+                          ? `Latest pH ${latest.ph}, TDS ${latest.tds} ppm, Turbidity ${latest.turbidity} NTU, Temperature ${latest.temperature} °C`
                           : "No readings available yet."}
                       </p>
                     </div>
@@ -2559,6 +2565,19 @@ export const UserDashboard = () => {
                   <div className="overflow-hidden rounded-[1.5rem] border border-slate-200/80 bg-white/90 dark:border-slate-700 dark:bg-slate-900/70">
                     <ChatPanel />
                   </div>
+                </motion.section>
+              )}
+
+              {activeTab === "Alert Panel" && (
+                <motion.section
+                  key="alert-panel-page"
+                  className="rounded-[1.75rem] border border-slate-200/80 bg-white/92 p-5 shadow-xl shadow-slate-950/5 dark:border-slate-700 dark:bg-slate-900/80"
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -14 }}
+                  transition={{ duration: 0.22 }}
+                >
+                  <AlertPanel />
                 </motion.section>
               )}
 
