@@ -58,7 +58,7 @@ const DEMO_ACCOUNTS: LocalAccount[] = [
   {
     uid: "demo-user",
     email: "user@demo.com",
-    password: "$2b$12$6oU86/MT26.tHpDZmI38.egdBMwR6oKmx0Q0vlNwHirPdLatEtpS6",
+    password: "password",
     role: "user",
     resetCode: "1234",
   },

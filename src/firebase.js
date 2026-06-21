@@ -77,7 +77,7 @@ export const firebaseSetupInfo = {
   missingRequiredKeys: missingRequiredFirebaseKeys,
   missingOptionalKeys: missingOptionalFirebaseKeys,
   envFileHint: ".env",
-  sourceHint: "Firebase Console -> Project settings -> General -> Your apps -> Web app config",
+  // sourceHint: "Firebase Console -> Project settings -> General -> Your apps -> Web app config",
 };
 
 export const isFirebaseConfigured = missingRequiredFirebaseKeys.length === 0;

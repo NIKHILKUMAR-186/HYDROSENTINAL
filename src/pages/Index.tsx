@@ -348,7 +348,7 @@ const Index = () => {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.3 }}
-          className="relative overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white/95 p-5 shadow-[0_50px_120px_-65px_rgba(15,23,42,0.18)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-slate-950/65 sm:p-7"
+          className="relative overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white/95 p-5 shadow-[0_50px_120px_-65px_rgba(15,23,42,0.18)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-cyan-950/65 sm:p-7"
         >
           <div className="grid gap-8 lg:gap-12 lg:grid-cols-[1.25fr_0.85fr] lg:items-start">
             <div className="space-y-6">
@@ -398,6 +398,7 @@ const Index = () => {
                 >
                   <Button
                     variant="outline"
+                    onClick={() => navigate("/hardware")}
                     className="border-slate-200 text-slate-900 hover:border-cyan-300 dark:border-slate-700 dark:text-white"
                   >
                     Learn how it works
@@ -678,11 +679,8 @@ const Index = () => {
               transition={{ delay: 0.2 }}
               className="mx-auto mt-3 max-w-2xl px-4 text-center text-base text-slate-600 dark:text-slate-300"
             >
-              
-                
-                The people behind HydroSentinel bring design, hardware, AI, and
-                real-world water knowledge together.
-              
+              The people behind HydroSentinel bring design, hardware, AI, and
+              real-world water knowledge together.
             </motion.p>
 
             <motion.div
@@ -1274,6 +1272,7 @@ const Index = () => {
               <motion.div
                 variants={getFadeSlideUpVariants()}
                 className="space-y-4"
+                id="Hardware"
               >
                 <h2 className="text-2xl font-bold text-slate-950 dark:text-white">
                   Hardware Architecture
@@ -1312,7 +1311,7 @@ const Index = () => {
             exit={{ opacity: 0, y: 20 }}
             transition={{ duration: 0.25 }}
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-            className="fixed right-6 bottom-6 z-50 rounded-full bg-cyan-500/90 p-3 text-white shadow-xl hover:scale-105 focus:outline-none"
+            className="fixed right-6 bottom-6 z-50 rounded-full bg-cyan-500/90 p-2 text-white text-3xl shadow-xl hover:scale-120  focus:outline-none"
             aria-label="Back to top"
           >
             ↑

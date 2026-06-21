@@ -146,7 +146,7 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose,
               <div className="space-y-2">
                 <Label>Location</Label>
                 <p className="text-sm text-slate-600 dark:text-slate-400">
-                  Search manually or pick a spot on the map like Rapido/Swiggy.
+                  Search manually or pick a spot on the map.
                 </p>
                 <Input
                   type="text"
