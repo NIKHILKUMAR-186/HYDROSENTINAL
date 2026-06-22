@@ -184,7 +184,8 @@ export function HeroBackground({ className = '' }: { className?: string }) {
 
   return (
     <div
-      className={`absolute inset-0 z-0 overflow-hidden ${className}`}
+      className={`${className}`}
+      style={{ position: 'fixed', inset: 0, zIndex: -2, overflow: 'hidden', pointerEvents: 'none' }}
       aria-hidden
     >
       {/* Canvas for particles, soft caustics, and volumetric light */}

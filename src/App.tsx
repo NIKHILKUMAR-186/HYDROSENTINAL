@@ -8,13 +8,14 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { lazy, Suspense, useEffect, useState } from "react";
 // import Loader from "./components/Loader.tsx";
 import NotFound from "./pages/NotFound.tsx";
-import HydroBackground from "./components/HydroBackground";
-import { useTheme } from "./contexts/ThemeContext";
+import HeroBackground from "./components/HeroBackground";
 import AppErrorBoundary from "./components/AppErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
-import { firebaseSetupInfo, isFirebaseConfigured } from "./firebase";
+import { isSupabaseConfigured, missingSupabaseKeys } from "./integrations/supabase/client";
 
 const Login = lazy(() => import("./pages/Login.tsx"));
+const Signup = lazy(() => import("./pages/Signup.tsx"));
+const Welcome = lazy(() => import("./pages/Welcome.tsx"));
 const Index = lazy(() => import("./pages/Index.tsx"));
 const UserDashboard = lazy(() => import("./pages/UserDashboard.tsx"));
 const AlertPanel = lazy(() => import("./components/AlertPanel.tsx"));
@@ -25,26 +26,24 @@ const Profile = lazy(() => import("./pages/Profile.tsx"));
 
 const queryClient = new QueryClient();
 
-const FirebaseSetupNotice = () => {
-  const missingKeys = firebaseSetupInfo.missingRequiredKeys;
-
+const SupabaseSetupNotice = () => {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-6">
       <div className="w-full max-w-2xl rounded-[2rem] border border-amber-200 bg-white/95 p-6 shadow-2xl dark:border-amber-500/30 dark:bg-slate-900/95">
         <p className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-700 dark:text-amber-300">
-          Firebase setup required
+          Supabase setup required
         </p>
         <h1 className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">
-          Missing Firebase values are blocking the app from starting.
+          Missing Supabase values are blocking the app from starting.
         </h1>
         <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-          Edit <span className="font-semibold">{firebaseSetupInfo.envFileHint}</span> in the project root and add the values below. Copy them from <span className="font-semibold">{firebaseSetupInfo.sourceHint}</span>.
+          Set the environment variables below in the project root and restart the dev server.
         </p>
 
         <div className="mt-5 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-100">
           <p className="font-semibold">Required keys</p>
           <ul className="mt-2 space-y-1 font-mono text-xs leading-5">
-            {missingKeys.map((key) => (
+            {missingSupabaseKeys.map((key) => (
               <li key={key}>{key}</li>
             ))}
           </ul>
@@ -54,27 +53,22 @@ const FirebaseSetupNotice = () => {
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
             <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Where to find them</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              In Firebase Console, open your project, go to Project settings, then the General tab. Under Your apps, choose the Web app and copy the config values.
+              In Supabase Dashboard, open your project, go to Settings  API, and copy the URL and anon key.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/60">
             <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Where to edit</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Save the values in <span className="font-semibold">.env</span> using the same <span className="font-mono">VITE_FIREBASE_*</span> variable names. Then restart the dev server.
+              Save the values in <span className="font-semibold">.env</span> using the same <span className="font-mono">VITE_SUPABASE_*</span> variable names. Then restart the dev server.
             </p>
           </div>
         </div>
 
         <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
           <p className="font-semibold">Example</p>
-          <pre className="mt-2 overflow-x-auto text-xs leading-5">{`VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=...
-VITE_FIREBASE_APP_ID=...`}</pre>
+          <pre className="mt-2 overflow-x-auto text-xs leading-5">{`VITE_SUPABASE_URL=https://xyzcompany.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=public-anon-key`}</pre>
         </div>
-
-        <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
-          Optional values like <span className="font-mono">VITE_FIREBASE_PROJECT_ID</span>, <span className="font-mono">VITE_FIREBASE_STORAGE_BUCKET</span>, and <span className="font-mono">VITE_FIREBASE_MEASUREMENT_ID</span> improve analytics and storage features, but the required keys above are the ones that stop startup if missing.
-        </p>
       </div>
     </div>
   );
@@ -108,6 +102,11 @@ const ProtectedRoute = ({
 
   if (!user) {
     return <Navigate to="/login" />;
+  }
+
+  // If user hasn't completed onboarding, redirect to welcome flow
+  if (user?.profile_completion && user.profile_completion < 100) {
+    return <Navigate to="/welcome" />;
   }
 
   if (requiredRole && role !== requiredRole) {
@@ -166,6 +165,12 @@ const AppRoutes = () => {
         {/* Public routes */}
         <Route path="/" element={<Index />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/welcome" element={
+          <ProtectedRoute>
+            <Welcome />
+          </ProtectedRoute>
+        } />
         <Route path="/home" element={<Index />} />
 
         {/* User routes */}
@@ -207,6 +212,14 @@ const AppRoutes = () => {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute requiredRole="user">
+              <Profile />
+            </ProtectedRoute>
+          }
+        />
 
         {/* Admin routes */}
         <Route
@@ -226,12 +239,11 @@ const AppRoutes = () => {
 };
 
 const ThemeBackground = () => {
-  const { theme } = useTheme();
   return (
     <>
       {/* app-scene-bg is the full-bleed CSS gradient element */}
       <div className="app-scene-bg" aria-hidden />
-      {theme === "dark" && <HydroBackground />}
+      <HeroBackground />
     </>
   );
 };
@@ -245,14 +257,14 @@ const App = () => (
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            {isFirebaseConfigured ? (
+            {isSupabaseConfigured ? (
               <BrowserRouter>
                 <AuthProvider>
                   <AppRoutes />
                 </AuthProvider>
               </BrowserRouter>
             ) : (
-              <FirebaseSetupNotice />
+              <SupabaseSetupNotice />
             )}
           </TooltipProvider>
         </AppErrorBoundary>

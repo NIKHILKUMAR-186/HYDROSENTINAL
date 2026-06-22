@@ -1,6 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { usePerformanceMode } from "@/lib/performanceMode";
-import { usePrefersReducedMotion } from "@/hooks/useAnimationUtils";
+import { useEffect, useRef } from "react";
 
 type Particle = {
   x: number;
@@ -28,24 +26,13 @@ const HydroBackground = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const timeRef = useRef(0);
-  const fpsRef = useRef({ frameCount: 0, lastTime: Date.now(), fps: 60 });
-  const performanceMode = usePerformanceMode();
   const prefersReducedMotion = usePrefersReducedMotion();
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  // Adaptive animation: disable on mobile or low-end devices
-  const shouldAnimate = !performanceMode && !prefersReducedMotion && !isMobile;
+  const shouldAnimate = !prefersReducedMotion;
 
   useEffect(() => {
     if (!shouldAnimate) return;
 
-    const canvas = canvasRef.current;
+      const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");

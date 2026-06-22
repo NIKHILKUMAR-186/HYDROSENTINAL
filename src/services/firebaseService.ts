@@ -6,14 +6,7 @@ import {
   getDownloadURL,
   deleteObject,
 } from "firebase/storage";
-import {
-  RecaptchaVerifier,
-  signInWithPhoneNumber,
-  PhoneAuthProvider,
-  multiFactor,
-  PhoneMultiFactorGenerator,
-  getAuth,
-} from "firebase/auth";
+// firebase/auth usage removed from frontend services (Supabase is primary auth)
 import { db, storage } from "@/firebase";
 
 // ==================== USER SERVICE ====================

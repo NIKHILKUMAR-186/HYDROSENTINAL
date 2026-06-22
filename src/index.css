@@ -399,6 +399,30 @@ html, body, #root { height: 100%; }
   color: #072031;
 }
 
+/* Auth page tweaks: responsive spacing and stronger dark-mode contrast */
+@layer components {
+  .auth-card {
+    border-radius: 1.25rem;
+    padding: 1.25rem;
+    transition: transform 220ms ease, box-shadow 220ms ease;
+  }
+
+  .auth-card:focus-within { box-shadow: 0 20px 50px -20px rgba(6,182,212,0.12); transform: translateY(-2px); }
+
+  @media (max-width: 640px) {
+    .auth-card { padding: 1rem; margin: 0 12px; }
+    .app-content-layer { padding: 0 8px; }
+  }
+
+  .auth-cta { height: 3rem; display:flex; align-items:center; justify-content:center; }
+
+  .auth-google-btn img { height: 20px; width: 20px; }
+
+  /* Slightly brighter form elements in dark mode for readability */
+  .dark .auth-card { background: rgba(15,23,27,0.88); border-color: rgba(6,182,212,0.08); }
+}
+
+
 /* Accent pill badges and small UI elements */
 .light .badge-accent,
 .light .tag-accent {

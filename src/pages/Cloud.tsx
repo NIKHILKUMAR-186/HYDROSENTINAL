@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
 import {
   Activity,
   AlertTriangle,
@@ -18,12 +17,12 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import FloatingSyncWidget from "@/components/FloatingSyncWidget";
-import { db, firebaseSetupInfo, isFirebaseConfigured } from "@/firebase";
 import {
   getConnectionSnapshot,
   refreshConnectionState,
   subscribeConnectionState,
 } from "@/lib/connectionManager";
+import { isSupabaseConfigured, missingSupabaseKeys } from "@/integrations/supabase/client";
 import {
   flushPendingDeviceOperations,
   flushPendingSignups,
@@ -53,23 +52,8 @@ export default function CloudPage() {
   useEffect(() => subscribeSyncSnapshot(setSyncSnapshot), []);
 
   useEffect(() => {
-    if (!db) return;
-
-    const unsub = onSnapshot(
-      collection(db, "devices"),
-      (snap) => {
-        setDocCount(snap.size);
-        setLastSync(new Date().toISOString());
-        setOnline(true);
-      },
-      (error) => {
-        console.warn("Cloud probe error:", error);
-        setOnline(false);
-      },
-    );
-
-    return () => unsub();
-  }, []);
+    setOnline(isSupabaseConfigured);
+  }, [isSupabaseConfigured]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !navigator.storage?.estimate) return;
@@ -106,6 +90,12 @@ export default function CloudPage() {
       ? Math.round((storageEstimate.usage / storageEstimate.quota) * 100)
       : null;
 
+  const supabaseSetupInfo = {
+    missingRequiredKeys: missingSupabaseKeys,
+    requiredKeys: ["VITE_SUPABASE_URL", "VITE_SUPABASE_PUBLISHABLE_KEY"],
+    optionalKeys: [],
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-6 text-slate-950 dark:bg-slate-950 dark:text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -134,7 +124,7 @@ export default function CloudPage() {
                     Dedicated cloud monitoring center
                   </h3>
                   <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700 dark:text-slate-300">
-                    Firestore connectivity, sync queue health, storage footprint,
+                    Remote backend connectivity, sync queue health, storage footprint,
                     and realtime connection checks all live here so the dashboard
                     can stay focused on reading workflows.
                   </p>
@@ -166,7 +156,7 @@ export default function CloudPage() {
                   type="button"
                   onClick={() => {
                     void navigator.clipboard?.writeText(
-                      JSON.stringify(firebaseSetupInfo, null, 2),
+                      JSON.stringify(supabaseSetupInfo, null, 2),
                     );
                   }}
                   className="rounded-2xl bg-emerald-500 px-4 py-3 text-white shadow-sm shadow-emerald-500/25 hover:bg-emerald-600"
@@ -187,19 +177,19 @@ export default function CloudPage() {
                       {online ? "Online" : "Degraded"}
                     </p>
                     <p className="text-sm text-slate-600 dark:text-slate-300">
-                      Firebase configured: {isFirebaseConfigured ? "Yes" : "No"}
+                      Remote backend configured: {isSupabaseConfigured ? "Yes" : "No"}
                     </p>
                   </div>
                 </div>
               </div>
 
               <div className="rounded-[1.5rem] border border-slate-200/80 bg-gradient-to-br from-white/96 via-slate-50/90 to-cyan-50/84 p-4 shadow-[0_20px_40px_-18px_rgba(15,23,42,0.12)] dark:border-white/10 dark:bg-slate-900/60">
-                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Firestore Status</p>
+                <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Backend status</p>
                 <div className="mt-3 flex items-center gap-3">
                   <Database className="h-5 w-5 text-cyan-600 dark:text-cyan-300" />
                   <div>
                     <p className="text-lg font-black text-slate-950 dark:text-white">
-                      {isFirebaseConfigured ? "Configured" : "Missing config"}
+                      {isSupabaseConfigured ? "Configured" : "Missing config"}
                     </p>
                     <p className="text-sm text-slate-600 dark:text-slate-300">
                       Documents monitored: {docCount ?? "—"}
@@ -241,17 +231,17 @@ export default function CloudPage() {
               <div className="rounded-[1.5rem] border border-slate-200/80 bg-gradient-to-br from-white/96 via-slate-50/90 to-cyan-50/84 p-4 shadow-[0_20px_40px_-18px_rgba(15,23,42,0.12)] dark:border-white/10 dark:bg-slate-900/60">
                 <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500 dark:text-slate-400">Database Health</p>
                 <div className="mt-3 flex items-center gap-3">
-                  {connection.firebaseConnected ? (
+                  {connection.remoteBackendConnected ? (
                     <ShieldCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
                   ) : (
                     <ShieldAlert className="h-5 w-5 text-amber-600 dark:text-amber-300" />
                   )}
                   <div>
                     <p className="text-lg font-black text-slate-950 dark:text-white">
-                      {connection.firebaseConnected ? "Healthy" : "Needs attention"}
+                      {connection.remoteBackendConnected ? "Healthy" : "Needs attention"}
                     </p>
                     <p className="text-sm text-slate-600 dark:text-slate-300">
-                      {syncSnapshot.lastError ?? "Firestore heartbeat responding"}
+                      {syncSnapshot.lastError ?? "Remote backend heartbeat responding"}
                     </p>
                   </div>
                 </div>
@@ -271,7 +261,7 @@ export default function CloudPage() {
                   </div>
                 </div>
                 <p className="mt-3 text-xs uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-                  Storage bucket: {firebaseSetupInfo.optionalKeys.includes("VITE_FIREBASE_STORAGE_BUCKET") ? "Configured" : "Not configured"}
+                  Storage bucket: {supabaseSetupInfo.optionalKeys.length > 0 ? "Configured" : "Not configured"}
                 </p>
               </div>
 
@@ -328,9 +318,9 @@ export default function CloudPage() {
                   detail: `${syncSnapshot.failedRequests} failed requests`,
                 },
                 {
-                  title: "Firestore",
+                  title: "Remote backend",
                   icon: Database,
-                  text: isFirebaseConfigured ? "Ready for reads/writes" : "Missing config",
+                  text: isSupabaseConfigured ? "Ready for reads/writes" : "Missing config",
                   detail: `${docCount ?? 0} device docs observed`,
                 },
                 {
@@ -366,14 +356,14 @@ export default function CloudPage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-300">
-                  Firestore setup
+                  Backend setup
                 </p>
                 <h4 className="mt-1 text-xl font-black text-slate-950 dark:text-white">
                   Configuration snapshot
                 </h4>
               </div>
               <span className="rounded-full bg-cyan-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-200">
-                {firebaseSetupInfo.missingRequiredKeys.length} missing
+                {supabaseSetupInfo.missingRequiredKeys.length} missing
               </span>
             </div>
 
@@ -383,7 +373,7 @@ export default function CloudPage() {
                   Required keys
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">
-                  {firebaseSetupInfo.requiredKeys.join(", ")}
+                  {supabaseSetupInfo.requiredKeys.join(", ")}
                 </p>
               </div>
               <div className="rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 dark:border-slate-700 dark:bg-slate-900/40">
@@ -391,7 +381,7 @@ export default function CloudPage() {
                   Optional keys
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">
-                  {firebaseSetupInfo.optionalKeys.join(", ")}
+                  {supabaseSetupInfo.optionalKeys.length > 0 ? supabaseSetupInfo.optionalKeys.join(", ") : "None"}
                 </p>
               </div>
               <div className="rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 dark:border-slate-700 dark:bg-slate-900/40">
@@ -399,9 +389,9 @@ export default function CloudPage() {
                   Project health
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-300">
-                  {connection.firebaseConnected
+                  {connection.remoteBackendConnected
                     ? "Realtime channel and database heartbeat are active."
-                    : "Realtime channel is paused or awaiting Firestore availability."}
+                    : "Realtime channel is paused or awaiting remote backend availability."}
                 </p>
               </div>
             </div>

@@ -2,9 +2,15 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 // Public publishable key intentionally exposed to the frontend.
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+export const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY);
+export const missingSupabaseKeys = [
+  ...(SUPABASE_URL ? [] : ["VITE_SUPABASE_URL"]),
+  ...(SUPABASE_PUBLISHABLE_KEY ? [] : ["VITE_SUPABASE_PUBLISHABLE_KEY"]),
+];
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
