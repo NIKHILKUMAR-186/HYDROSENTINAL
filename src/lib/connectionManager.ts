@@ -1,13 +1,12 @@
-import { docSafe, getDocSafe } from "./firestoreSafe";
-import { db, isFirebaseConfigured } from "@/firebase";
+import { isSupabaseConfigured, SUPABASE_URL } from "@/integrations/supabase/client";
 
-export type ConnectionStatus = "ONLINE" | "OFFLINE" | "FIREBASE_DISCONNECTED" | "SYNCING";
+export type ConnectionStatus = "ONLINE" | "OFFLINE" | "REMOTE_DISCONNECTED" | "SYNCING";
 
 export type ConnectionSnapshot = {
   status: ConnectionStatus;
   navigatorOnline: boolean;
   internetReachable: boolean;
-  firebaseConnected: boolean;
+  remoteBackendConnected: boolean;
   lastCheckedAt: string | null;
   lastError: string | null;
   heartbeatAt: string | null;
@@ -15,13 +14,9 @@ export type ConnectionSnapshot = {
 
 const HEARTBEAT_INTERVAL_MS = 5000;
 const INTERNET_PING_URL = "https://www.gstatic.com/generate_204";
-const getFirebaseHeartbeatDoc = () => {
-  if (!db || !isFirebaseConfigured) return null;
-  try {
-    return docSafe(db, "__health", "heartbeat");
-  } catch (e) {
-    return null;
-  }
+const getRemoteHeartbeatUrl = () => {
+  if (!isSupabaseConfigured || !SUPABASE_URL) return null;
+  return `${SUPABASE_URL}/auth/v1/health`;
 };
 
 const listeners = new Set<(snapshot: ConnectionSnapshot) => void>();
@@ -32,7 +27,7 @@ let currentSnapshot: ConnectionSnapshot = {
   status: "OFFLINE",
   navigatorOnline: false,
   internetReachable: false,
-  firebaseConnected: false,
+  remoteBackendConnected: false,
   lastCheckedAt: null,
   lastError: null,
   heartbeatAt: null,
@@ -71,16 +66,24 @@ const probeInternetReachability = async () => {
   }
 };
 
-const probeFirebaseConnectivity = async () => {
+const probeRemoteBackendConnectivity = async () => {
   if (!canUseBrowser()) {
     return true;
   }
 
   try {
-    const hb = getFirebaseHeartbeatDoc();
-    if (!hb) return false;
-    await Promise.race([getDocSafe(hb), wait(4000)]);
-    return true;
+    const heartbeatUrl = getRemoteHeartbeatUrl();
+    if (!heartbeatUrl) return false;
+
+    const response = await Promise.race([
+      fetch(heartbeatUrl, {
+        method: "GET",
+        cache: "no-store",
+      }),
+      wait(4000),
+    ]);
+
+    return response instanceof Response ? response.ok : false;
   } catch {
     return false;
   }
@@ -89,7 +92,7 @@ const probeFirebaseConnectivity = async () => {
 const deriveStatus = (
   navigatorOnline: boolean,
   internetReachable: boolean,
-  firebaseConnected: boolean,
+  remoteBackendConnected: boolean,
   syncing: boolean,
 ): ConnectionStatus => {
   if (syncing) {
@@ -100,8 +103,8 @@ const deriveStatus = (
     return "OFFLINE";
   }
 
-  if (!firebaseConnected) {
-    return "FIREBASE_DISCONNECTED";
+  if (!remoteBackendConnected) {
+    return "REMOTE_DISCONNECTED";
   }
 
   return "ONLINE";
@@ -125,13 +128,13 @@ export const refreshConnectionState = async (syncing = false) => {
 
   const navigatorOnline = window.navigator.onLine;
   const internetReachable = navigatorOnline ? await probeInternetReachability() : false;
-  const firebaseConnected = navigatorOnline && internetReachable ? await probeFirebaseConnectivity() : false;
+  const remoteBackendConnected = navigatorOnline && internetReachable ? await probeRemoteBackendConnectivity() : false;
 
   const nextSnapshot: ConnectionSnapshot = {
-    status: deriveStatus(navigatorOnline, internetReachable, firebaseConnected, syncing),
+    status: deriveStatus(navigatorOnline, internetReachable, remoteBackendConnected, syncing),
     navigatorOnline,
     internetReachable,
-    firebaseConnected,
+    remoteBackendConnected,
     lastCheckedAt: new Date().toISOString(),
     lastError: currentSnapshot.lastError,
     heartbeatAt: new Date().toISOString(),
@@ -169,7 +172,7 @@ export const markSyncing = (syncing: boolean) => {
     status: deriveStatus(
       currentSnapshot.navigatorOnline,
       currentSnapshot.internetReachable,
-      currentSnapshot.firebaseConnected,
+      currentSnapshot.remoteBackendConnected,
       syncing,
     ),
     lastCheckedAt: new Date().toISOString(),
@@ -193,7 +196,7 @@ export const ensureConnectionMonitoring = () => {
       status: "OFFLINE",
       navigatorOnline: false,
       internetReachable: false,
-      firebaseConnected: false,
+      remoteBackendConnected: false,
       lastCheckedAt: new Date().toISOString(),
     });
   };

@@ -1,3 +1,4 @@
+import { usePrefersReducedMotion } from "@/hooks/useAnimationUtils";
 import { useEffect, useRef } from "react";
 
 type Particle = {
@@ -49,7 +50,7 @@ const HydroBackground = () => {
     const floatingOrbs: FloatingOrb[] = [];
 
     // 🌊 Optimized particle count: 40 (50% reduction)
-    const particleCount = 40;
+    const particleCount = 100;
     const orbCount = 6;
     
     for (let i = 0; i < particleCount; i++) {
@@ -174,24 +175,24 @@ const HydroBackground = () => {
       });
 
       // Skip particle linking (expensive) - only draw on desktop devices
-      if (!isMobile && timeRef.current % 3 === 0) {
-        for (let i = 0; i < particles.length; i++) {
-          for (let j = i + 1; j < particles.length; j++) {
-            const dx = particles[i].x - particles[j].x;
-            const dy = particles[i].y - particles[j].y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
+      // if (!isMobile && timeRef.current % 3 === 0) {
+      //   for (let i = 0; i < particles.length; i++) {
+      //     for (let j = i + 1; j < particles.length; j++) {
+      //       const dx = particles[i].x - particles[j].x;
+      //       const dy = particles[i].y - particles[j].y;
+      //       const distance = Math.sqrt(dx * dx + dy * dy);
 
-            if (distance < 150) {
-              ctx.strokeStyle = `rgba(0,200,255,${0.1 * (1 - distance / 150)})`;
-              ctx.lineWidth = 1;
-              ctx.beginPath();
-              ctx.moveTo(particles[i].x, particles[i].y);
-              ctx.lineTo(particles[j].x, particles[j].y);
-              ctx.stroke();
-            }
-          }
-        }
-      }
+      //       if (distance < 150) {
+      //         ctx.strokeStyle = `rgba(0,200,255,${0.1 * (1 - distance / 150)})`;
+      //         ctx.lineWidth = 1;
+      //         ctx.beginPath();
+      //         ctx.moveTo(particles[i].x, particles[i].y);
+      //         ctx.lineTo(particles[j].x, particles[j].y);
+      //         ctx.stroke();
+      //       }
+      //     }
+      //   }
+      // }
 
       rafRef.current = requestAnimationFrame(draw);
     };
@@ -206,12 +207,12 @@ const HydroBackground = () => {
         cancelAnimationFrame(rafRef.current);
       }
     };
-  }, [shouldAnimate, isMobile]);
+  }, [shouldAnimate]);
 
   return (
     <>
       {/* 🌊 REAL IMAGE BACKGROUND */}
-      <div
+      {/* <div
         className="hydro-bg-image"
         style={{
           position: "fixed",
@@ -221,7 +222,7 @@ const HydroBackground = () => {
           backgroundPosition: "center",
           zIndex: -2,
         }}
-      />
+      /> */}
 
       {/* 🌫️ PREMIUM GRADIENT OVERLAY */}
       <div

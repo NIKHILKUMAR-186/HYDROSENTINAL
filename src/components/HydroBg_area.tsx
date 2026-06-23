@@ -1,4 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { usePerformanceMode } from "@/lib/performanceMode";
+import { usePrefersReducedMotion } from "@/hooks/useAnimationUtils";
 
 type Particle = {
   x: number;
@@ -26,13 +28,24 @@ const HydroBackground = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const timeRef = useRef(0);
+  const fpsRef = useRef({ frameCount: 0, lastTime: Date.now(), fps: 60 });
+  const performanceMode = usePerformanceMode();
   const prefersReducedMotion = usePrefersReducedMotion();
-  const shouldAnimate = !prefersReducedMotion;
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 100);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Adaptive animation: disable on mobile or low-end devices
+  const shouldAnimate = !performanceMode && !prefersReducedMotion && !isMobile;
 
   useEffect(() => {
     if (!shouldAnimate) return;
 
-      const canvas = canvasRef.current;
+    const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
@@ -49,12 +62,12 @@ const HydroBackground = () => {
     const floatingOrbs: FloatingOrb[] = [];
 
     // 🌊 Optimized particle count: 40 (50% reduction)
-    const particleCount = 40;
-    const orbCount = 6;
+    const particleCount = 100;
+    const orbCount = 20;
     
     for (let i = 0; i < particleCount; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 0.5 + 0.2;
+      const speed = Math.random() * 0.8 + 0.5;
       particles.push({
         x: Math.random() * canvas.width,
         y: Math.random() * canvas.height,
@@ -211,7 +224,7 @@ const HydroBackground = () => {
   return (
     <>
       {/* 🌊 REAL IMAGE BACKGROUND */}
-      <div
+      {/* <div
         className="hydro-bg-image"
         style={{
           position: "fixed",
@@ -221,7 +234,7 @@ const HydroBackground = () => {
           backgroundPosition: "center",
           zIndex: -2,
         }}
-      />
+      /> */}
 
       {/* 🌫️ PREMIUM GRADIENT OVERLAY */}
       <div

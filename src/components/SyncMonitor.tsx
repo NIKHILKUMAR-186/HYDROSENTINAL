@@ -89,7 +89,7 @@ export const SyncMonitor: React.FC<{ userId?: string }> = ({ userId }) => {
       case "ONLINE":
         return {
           label: "Cloud Connected",
-          description: "Live syncing to Firestore",
+          description: "Live syncing to the remote backend",
           tone: "text-emerald-300",
           border: "border-emerald-400/30",
           badge: "bg-emerald-500/10 text-emerald-300",
@@ -98,16 +98,16 @@ export const SyncMonitor: React.FC<{ userId?: string }> = ({ userId }) => {
       case "SYNCING":
         return {
           label: "Syncing",
-          description: "Syncing with Firebase...",
+          description: "Syncing with the remote backend...",
           tone: "text-cyan-300",
           border: "border-cyan-400/30",
           badge: "bg-cyan-500/10 text-cyan-300",
           icon: <RotateCcw className="h-4 w-4 animate-spin" />,
         };
-      case "FIREBASE_DISCONNECTED":
+      case "REMOTE_DISCONNECTED":
         return {
-          label: "Firebase disconnected",
-          description: "Queueing changes until Firestore is reachable",
+          label: "Backend disconnected",
+          description: "Queueing changes until the remote backend is reachable",
           tone: "text-amber-300",
           border: "border-amber-400/30",
           badge: "bg-amber-500/10 text-amber-300",
@@ -129,7 +129,7 @@ export const SyncMonitor: React.FC<{ userId?: string }> = ({ userId }) => {
     if (totalQueued === 0 && prevQueuedTotal.current > 0 && syncSnapshot.lastSyncAt) {
       toast({
         title: "Synced successfully",
-        description: "Pending changes were pushed to Firestore.",
+        description: "Pending changes were pushed to the remote backend.",
       });
     }
 
@@ -214,8 +214,8 @@ export const SyncMonitor: React.FC<{ userId?: string }> = ({ userId }) => {
                 <div className="font-semibold">{connection.navigatorOnline && connection.internetReachable ? "Reachable" : "Unavailable"}</div>
               </div>
               <div className="rounded-lg bg-slate-800/80 p-2">
-                <div className="text-slate-400">Firebase</div>
-                <div className="font-semibold">{connection.firebaseConnected ? "Connected" : "Disconnected"}</div>
+                <div className="text-slate-400">Remote backend</div>
+                <div className="font-semibold">{connection.remoteBackendConnected ? "Connected" : "Disconnected"}</div>
               </div>
               <div className="rounded-lg bg-slate-800/80 p-2">
                 <div className="text-slate-400">Retries</div>

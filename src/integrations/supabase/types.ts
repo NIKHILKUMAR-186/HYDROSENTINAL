@@ -44,6 +44,50 @@ export type Database = {
         }
         Relationships: []
       }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+          organization_name: string | null
+          organization_type: string | null
+          profile_completion: number
+          reset_code: string | null
+          role: "user" | "admin"
+          system_id: string | null
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id: string
+          organization_name?: string | null
+          organization_type?: string | null
+          profile_completion?: number
+          reset_code?: string | null
+          role: "user" | "admin"
+          system_id?: string | null
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          organization_name?: string | null
+          organization_type?: string | null
+          profile_completion?: number
+          reset_code?: string | null
+          role?: "user" | "admin"
+          system_id?: string | null
+          updated_at?: string
+          username?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

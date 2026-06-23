@@ -20,6 +20,7 @@ export function HeroBackground({ className = '' }: { className?: string }) {
   const mouseLerp = useRef({ x: 0, y: 0 });
   const scrollY = useRef(0);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [canvasSupported, setCanvasSupported] = useState(true);
 
   // Check for reduced-motion preference
   useEffect(() => {
@@ -33,6 +34,14 @@ export function HeroBackground({ className = '' }: { className?: string }) {
   useEffect(() => {
     const canvas = canvasRef.current!;
     if (!canvas) return;
+
+    // detect canvas 2d support and fall back if unavailable
+    const ctxTest = canvas.getContext && canvas.getContext('2d');
+    if (!ctxTest) {
+      console.warn('[HeroBackground] 2D canvas not supported — falling back to CSS gradient.');
+      setCanvasSupported(false);
+      return;
+    }
 
     const ctx = canvas.getContext('2d')!;
 
@@ -184,11 +193,17 @@ export function HeroBackground({ className = '' }: { className?: string }) {
 
   return (
     <div
-      className={`absolute inset-0 z-0 overflow-hidden ${className}`}
+      className={`hero-background-root ${className}`}
+      style={{ position: 'fixed', inset: 0, zIndex: 0, overflow: 'hidden', pointerEvents: 'none', width: '100%', height: '100%', minHeight: '100vh' }}
       aria-hidden
     >
       {/* Canvas for particles, soft caustics, and volumetric light */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" />
+      {canvasSupported ? (
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" />
+      ) : (
+        // Fallback animated gradient if canvas fails
+        <div className="absolute inset-0 w-full h-full block animated-light-bg" style={{ animation: 'parallax-float 8s ease-in-out infinite' }} />
+      )}
 
       {/* Soft liquid gradient wave layer (SVG) with scroll parallax */}
       <svg 
