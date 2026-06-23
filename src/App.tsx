@@ -8,7 +8,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { lazy, Suspense, useEffect, useState } from "react";
 // import Loader from "./components/Loader.tsx";
 import NotFound from "./pages/NotFound.tsx";
-import HeroBackground from "./components/HeroBackground";
+import SharedAnimatedBackground from "./components/SharedAnimatedBackground";
 import AppErrorBoundary from "./components/AppErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isSupabaseConfigured, missingSupabaseKeys } from "./integrations/supabase/client";
@@ -239,13 +239,7 @@ const AppRoutes = () => {
 };
 
 const ThemeBackground = () => {
-  return (
-    <>
-      {/* app-scene-bg is the full-bleed CSS gradient element */}
-      <div className="app-scene-bg" aria-hidden />
-      <HeroBackground />
-    </>
-  );
+  return <SharedAnimatedBackground />;
 };
 
 const App = () => (
