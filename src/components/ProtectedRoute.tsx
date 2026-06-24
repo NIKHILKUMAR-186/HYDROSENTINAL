@@ -1,3 +1,4 @@
+import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,12 +8,7 @@ interface ProtectedRouteProps {
   requiredRole?: "user" | "admin" | "operator" | "researcher";
 }
 
-const RoleRedirect = ({ role }: { role: string | null }) => {
-  if (role === "admin") return <Navigate to="/admin" replace />;
-  return <Navigate to="/dashboard" replace />;
-};
-
-export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
+export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole }) => {
   const { user, role, loading } = useAuth();
   const location = useLocation();
 
@@ -58,3 +54,5 @@ export const OperatorRoute = ({ children }: { children: React.ReactNode }) => (
 export const ResearcherRoute = ({ children }: { children: React.ReactNode }) => (
   <ProtectedRoute requiredRole="researcher">{children}</ProtectedRoute>
 );
+
+export default ProtectedRoute;

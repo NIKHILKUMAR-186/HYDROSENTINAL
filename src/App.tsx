@@ -4,11 +4,12 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import * as authService from "@/services/authService";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { lazy, Suspense, useEffect, useState } from "react";
 // import Loader from "./components/Loader.tsx";
 import NotFound from "./pages/NotFound.tsx";
-import HeroBackground from "./components/HeroBackground";
+import HydroBackground from "./components/HydroBackground";
 import AppErrorBoundary from "./components/AppErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isSupabaseConfigured, missingSupabaseKeys } from "./integrations/supabase/client";
@@ -84,7 +85,9 @@ const ProtectedRoute = ({
 }) => {
   const { user, role, loading } = useAuth();
 
+  // CRITICAL: Hold all navigation while auth is loading to prevent redirect loops
   if (loading) {
+    console.log('[ProtectedRoute] auth is loading - showing skeleton');
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="w-full max-w-md rounded-3xl border border-slate-200/80 bg-white/95 p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900/90">
@@ -100,17 +103,23 @@ const ProtectedRoute = ({
     );
   }
 
+  console.log('[ProtectedRoute] auth loaded - user:', user?.uid ?? "none", 'role:', role);
   if (!user) {
-    return <Navigate to="/login" />;
+    console.log('[ProtectedRoute] no user - redirecting to login');
+    return <Navigate to="/login" replace />;
   }
 
   // If user hasn't completed onboarding, redirect to welcome flow
   if (user?.profile_completion && user.profile_completion < 100) {
+    console.log('[REDIRECT TARGET]', '/welcome');
     return <Navigate to="/welcome" />;
   }
 
   if (requiredRole && role !== requiredRole) {
-    return <Navigate to="/" />;
+    const target = authService.redirectByRole(role ?? 'user');
+    console.log('[ROLE RESOLUTION]', role);
+    console.log('[REDIRECT TARGET]', target);
+    return <Navigate to={target} replace />;
   }
 
   return children;
@@ -243,7 +252,7 @@ const ThemeBackground = () => {
     <>
       {/* app-scene-bg is the full-bleed CSS gradient element */}
       <div className="app-scene-bg" aria-hidden />
-      <HeroBackground />
+      <HydroBackground />
     </>
   );
 };

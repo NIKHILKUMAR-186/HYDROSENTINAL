@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import * as authService from "@/services/authService";
 
 export const Signup = () => {
   const [fullName, setFullName] = useState("");
@@ -40,6 +41,10 @@ export const Signup = () => {
         recoveryCode: "",
       } as any;
 
+      console.log('[AUTH SESSION]', null);
+      console.log('[AUTH USER]', { email });
+      console.log('[PROFILE UPSERT PAYLOAD]', payload);
+
       const { syncStatus } = await signupWithProfile(payload);
       if (syncStatus === "pending") {
         toast({ title: "Account created (pending)", description: "We will sync when online" });
@@ -49,7 +54,7 @@ export const Signup = () => {
 
       navigate("/welcome");
     } catch (err) {
-      toast({ title: "Signup failed", description: String(err) });
+      toast({ title: "Signup failed", description: authService.formatError(err) });
     } finally {
       setLoading(false);
     }

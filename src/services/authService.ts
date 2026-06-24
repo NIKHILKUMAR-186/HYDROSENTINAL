@@ -1,5 +1,89 @@
 import { supabase } from "@/integrations/supabase/client";
 import * as bcrypt from "bcryptjs";
+import { getProfile as getProfileRow, upsertProfile as upsertProfileRow } from "./profileService";
+
+const fmtError = (err: any) => err?.message || err?.error_description || (typeof err === "string" ? err : JSON.stringify(err, null, 2));
+
+export const getCurrentUser = async () => {
+  try {
+    if (typeof supabase.auth.getUser === "function") {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) throw new Error(fmtError(error));
+      const user = data?.user ?? null;
+      console.log('[AUTH USER]', user);
+      return user;
+    }
+  } catch (e) {
+    console.log("[AUTH] getUser failed, falling back:", fmtError(e));
+  }
+
+  // Fallback for environments/mocks where getUser isn't available
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    console.log('[AUTH SESSION]', data);
+    if (error) throw new Error(fmtError(error));
+    const user = data?.session?.user ?? null;
+    console.log('[AUTH USER]', user);
+    return user;
+  } catch (err) {
+    throw new Error(fmtError(err));
+  }
+};
+
+export const getProfile = async (uid: string) => {
+  try {
+    console.log('[PROFILE FETCH]', uid);
+    const profile = await getProfileRow(uid);
+    console.log('[PROFILE FOUND]', profile);
+    return profile;
+  } catch (err) {
+    console.log('[PROFILE FETCH] error', fmtError(err));
+    throw err;
+  }
+};
+
+export const createProfile = async (payload: any) => {
+  try {
+    console.log('[PROFILE UPSERT PAYLOAD]', payload);
+    // Use upsert to be idempotent (handles race conditions)
+    const created = await upsertProfileRow(payload);
+    console.log('[PROFILE UPSERT RESULT]', created);
+    return created;
+  } catch (err) {
+    console.log('[PROFILE UPSERT ERROR]', err);
+    throw err;
+  }
+};
+
+export const upsertProfile = async (payload: any) => {
+  try {
+    console.log('[PROFILE UPSERT PAYLOAD]', payload);
+    const result = await upsertProfileRow(payload);
+    console.log('[PROFILE UPSERT RESULT]', result);
+    return result;
+  } catch (err) {
+    console.log('[PROFILE UPSERT ERROR]', err);
+    throw err;
+  }
+};
+
+export const redirectByRole = (role: string | null) => {
+  const r = role === "admin" ? "/admin" : "/dashboard";
+  console.log('[ROLE RESOLUTION]', role);
+  console.log('[REDIRECT TARGET]', r);
+  return r;
+};
+
+export const formatError = fmtError;
+
+export default {
+  getCurrentUser,
+  getProfile,
+  createProfile,
+  upsertProfile,
+  redirectByRole,
+  formatError,
+};
 
 const PASSWORD_HASH_ROUNDS = 12;
 

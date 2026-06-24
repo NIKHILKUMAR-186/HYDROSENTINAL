@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Particle = {
   x: number;
@@ -26,8 +26,33 @@ const HydroBackground = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const timeRef = useRef(0);
-  const prefersReducedMotion = usePrefersReducedMotion();
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const shouldAnimate = !prefersReducedMotion;
+
+  // Check for prefers-reduced-motion
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setPrefersReducedMotion(mediaQuery.matches);
+
+    const handleChange = (e: MediaQueryListEvent) => {
+      setPrefersReducedMotion(e.matches);
+    };
+
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  // Check if device is mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   useEffect(() => {
     if (!shouldAnimate) return;
@@ -49,7 +74,7 @@ const HydroBackground = () => {
     const floatingOrbs: FloatingOrb[] = [];
 
     // 🌊 Optimized particle count: 40 (50% reduction)
-    const particleCount = 40;
+    const particleCount = 100;
     const orbCount = 6;
     
     for (let i = 0; i < particleCount; i++) {
@@ -81,23 +106,50 @@ const HydroBackground = () => {
       });
     }
 
-    const drawGradientCircle = (
-      x: number,
-      y: number,
-      r: number,
-      color: [number, number, number],
-      opacity: number,
-    ) => {
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
-      const [r_, g_, b_] = color;
-      gradient.addColorStop(0, `rgba(${r_},${g_},${b_},${opacity * 0.8})`);
-      gradient.addColorStop(0.5, `rgba(${r_},${g_},${b_},${opacity * 0.3})`);
-      gradient.addColorStop(1, `rgba(${r_},${g_},${b_},0)`);
+    // Pre-render particle sprites to avoid creating gradients every frame
+    const particleSpriteCache = new Map<string, CanvasImageSource>();
+    
+    const getOrCreateParticleSprite = (r: number, color: [number, number, number], opacity: number): CanvasImageSource => {
+      const cacheKey = `${r}_${color[0]}_${color[1]}_${color[2]}_${Math.round(opacity * 10)}`;
+      
+      if (particleSpriteCache.has(cacheKey)) {
+        return particleSpriteCache.get(cacheKey)!;
+      }
 
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
+      // Create offscreen canvas for particle sprite (only once per unique particle type)
+      const spriteCanvas = document.createElement("canvas");
+      spriteCanvas.width = r * 4;
+      spriteCanvas.height = r * 4;
+      const spriteCtx = spriteCanvas.getContext("2d");
+      
+      if (spriteCtx) {
+        const cx = r * 2;
+        const cy = r * 2;
+        const gradient = spriteCtx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        const [r_, g_, b_] = color;
+        gradient.addColorStop(0, `rgba(${r_},${g_},${b_},${opacity * 0.8})`);
+        gradient.addColorStop(0.5, `rgba(${r_},${g_},${b_},${opacity * 0.3})`);
+        gradient.addColorStop(1, `rgba(${r_},${g_},${b_},0)`);
+
+        spriteCtx.fillStyle = gradient;
+        spriteCtx.beginPath();
+        spriteCtx.arc(cx, cy, r, 0, Math.PI * 2);
+        spriteCtx.fill();
+      }
+
+      particleSpriteCache.set(cacheKey, spriteCanvas);
+      return spriteCanvas;
+    };
+
+    // Cache background gradient
+    let bgGradientCached: CanvasGradient | null = null;
+    const getBackgroundGradient = () => {
+      if (!bgGradientCached) {
+        bgGradientCached = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        bgGradientCached.addColorStop(0, "rgba(5, 15, 30, 0)");
+        bgGradientCached.addColorStop(1, "rgba(2, 8, 20, 0.3)");
+      }
+      return bgGradientCached;
     };
 
     const drawWaveLines = (time: number) => {
@@ -121,10 +173,8 @@ const HydroBackground = () => {
     };
 
     const draw = () => {
-      const bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      bgGradient.addColorStop(0, "rgba(5, 15, 30, 0)");
-      bgGradient.addColorStop(1, "rgba(2, 8, 20, 0.3)");
-      ctx.fillStyle = bgGradient;
+      // Use cached background gradient
+      ctx.fillStyle = getBackgroundGradient();
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       timeRef.current += 1;
@@ -145,8 +195,11 @@ const HydroBackground = () => {
         if (orb.y > canvas.height + 50) orb.y = -50;
         if (orb.y < -50) orb.y = canvas.height + 50;
 
-        drawGradientCircle(orb.x, orb.y, orb.r * 2, orb.color, orb.opacity * 0.5);
-        drawGradientCircle(orb.x, orb.y, orb.r, orb.color, orb.opacity);
+        // Use cached sprite instead of drawing gradient every frame
+        const sprite = getOrCreateParticleSprite(orb.r * 2, orb.color, orb.opacity * 0.5);
+        ctx.drawImage(sprite, orb.x - orb.r * 2, orb.y - orb.r * 2);
+        const sprite2 = getOrCreateParticleSprite(orb.r, orb.color, orb.opacity);
+        ctx.drawImage(sprite2, orb.x - orb.r, orb.y - orb.r);
       });
 
       particles.forEach((p) => {
@@ -159,18 +212,13 @@ const HydroBackground = () => {
         if (p.y < 0) p.y = canvas.height;
 
         const pulse = Math.sin(timeRef.current * 0.02 + p.life * Math.PI * 2) * 0.5 + 0.5;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-
-        const particleGradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 2);
-        particleGradient.addColorStop(0, `rgba(100,200,255,${0.6 * pulse})`);
-        particleGradient.addColorStop(1, `rgba(0,150,255,${0.2 * pulse})`);
-        ctx.fillStyle = particleGradient;
-        ctx.fill();
-
-        ctx.strokeStyle = `rgba(0,255,255,${0.3 * pulse})`;
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        
+        // Use cached particle sprite with adjusted opacity based on pulse
+        const particleOpacity = 0.6 * pulse;
+        const particleSprite = getOrCreateParticleSprite(p.r * 2, [100, 200, 255], particleOpacity);
+        ctx.globalAlpha = pulse;
+        ctx.drawImage(particleSprite, p.x - p.r * 2, p.y - p.r * 2);
+        ctx.globalAlpha = 1;
       });
 
       // Skip particle linking (expensive) - only draw on desktop devices
@@ -205,6 +253,9 @@ const HydroBackground = () => {
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
       }
+      // Clean up sprite cache to prevent memory leaks
+      particleSpriteCache.clear();
+      bgGradientCached = null;
     };
   }, [shouldAnimate, isMobile]);
 

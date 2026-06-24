@@ -50,9 +50,17 @@ export type Database = {
           email: string | null
           full_name: string | null
           id: string
+          phone: string | null
+          city: string | null
+          state: string | null
+          country: string | null
+          water_source: string | null
+          use_case: string | null
           organization_name: string | null
           organization_type: string | null
           profile_completion: number
+          last_login: string | null
+          is_active: boolean
           reset_code: string | null
           role: "user" | "admin"
           system_id: string | null
@@ -64,9 +72,17 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id: string
+          phone?: string | null
+          city?: string | null
+          state?: string | null
+          country?: string | null
+          water_source?: string | null
+          use_case?: string | null
           organization_name?: string | null
           organization_type?: string | null
           profile_completion?: number
+          last_login?: string | null
+          is_active?: boolean
           reset_code?: string | null
           role: "user" | "admin"
           system_id?: string | null
@@ -80,6 +96,14 @@ export type Database = {
           organization_name?: string | null
           organization_type?: string | null
           profile_completion?: number
+          phone?: string | null
+          city?: string | null
+          state?: string | null
+          country?: string | null
+          water_source?: string | null
+          use_case?: string | null
+          last_login?: string | null
+          is_active?: boolean
           reset_code?: string | null
           role?: "user" | "admin"
           system_id?: string | null
