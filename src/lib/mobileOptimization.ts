@@ -23,13 +23,10 @@ export const getCPUCores = (): number => {
 };
 
 export const shouldDisableAnimations = (): boolean => {
-  const lowMemory = getDeviceMemory() <= 2;
-  const lowCores = getCPUCores() <= 2;
-  const slowConnection = isSlowConnection();
-  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  // Do not disable animations just because of screen size
-  return lowMemory || lowCores || slowConnection || prefersReduced;
+  // Only respect the user's reduced-motion preference here.
+  // Do NOT disable animations based on hardware heuristics — animations should remain available and be scaled responsively.
+  const prefersReduced = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return !!prefersReduced;
 };
 
 export const getPerformanceProfile = () => {
