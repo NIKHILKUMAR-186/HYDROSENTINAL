@@ -114,7 +114,7 @@
     background-image: linear-gradient(90deg, rgba(95,58,180,1) 0%, rgba(115,79,206,1) 38%, rgba(9,122,242,1) 80%, rgba(0,170,255,1) 100%, rgba(0,145,217,1) 92%, rgba(69,142,252,1) 95%);
     z-index: -2; /* bring scene above any deeply-buried hydro layers when needed */
   }
-  .dark .app-scene-bg { background: var(--background-gradient-dark); }
+  .dark .app-scene-bg { background: var(--background-gradient-dark); z-index: -4; /* push behind HydroBackground in dark mode */ }
 
   /* Override HydroBackground fixed layers in light mode so the light gradient is visible */
   html.light .hydro-bg-image,

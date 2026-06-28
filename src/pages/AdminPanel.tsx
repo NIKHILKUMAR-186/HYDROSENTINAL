@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { toIsoTimestamp } from "@/lib/deviceStore";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
 import { motion } from "framer-motion";
 import {
   getParallaxVariants,
@@ -15,18 +14,9 @@ import { StatusBanner } from "@/components/StatusBanner";
 import { SensorCard } from "@/components/SensorCard";
 import { WaterGraph } from "@/components/WaterGraph";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import {
-  collection,
-  collectionGroup,
-  deleteDoc,
-  doc,
-  getDocs,
-  onSnapshot,
-  query,
-  setDoc,
-  where,
-} from "firebase/firestore";
-import { db } from "@/firebase";
+// Firebase imports removed - using Supabase exclusively
+import { adminService, deviceService, readingsService, complaintsService } from "@/services/supabaseService";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Users,
   LogOut,
