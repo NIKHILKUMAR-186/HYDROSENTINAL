@@ -19,7 +19,21 @@ const UserDashboard = () => {
   const [showAddDeviceModal, setShowAddDeviceModal] = useState(false);
   const [addReadingLoading, setAddReadingLoading] = useState(false);
 
-  const handleAddDevice = async (deviceData: { name: string; lat: number; lng: number; zone: string; location: string }) => {
+  const handleAddDevice = async (deviceData: {
+    name: string;
+    lat: number;
+    lng: number;
+    zone: string;
+    location: string;
+    city: string;
+    district: string;
+    state: string;
+    country: string;
+    postalCode: string;
+    accuracy: number | null;
+    permissionStatus: string;
+    gpsStatus: string;
+  }) => {
     // location is currently unused by the simple local hook; keep API compatible
     addDevice({ name: deviceData.name, lat: deviceData.lat, lng: deviceData.lng, zone: deviceData.zone });
     return true;

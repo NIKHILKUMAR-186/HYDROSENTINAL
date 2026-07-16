@@ -29,7 +29,13 @@ export type DeviceRecord = {
   // Enhanced location tracking fields
   address?: string;
   city?: string;
+  district?: string;
+  state?: string;
   country?: string;
+  postalCode?: string;
+  locationAccuracy?: number | null;
+  permissionStatus?: string;
+  gpsStatus?: string;
   lastLocationUpdate?: string;
   installationType?: "gps" | "manual" | "simulator";
   isLocationConfigured?: boolean;

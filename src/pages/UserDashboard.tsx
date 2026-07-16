@@ -112,6 +112,7 @@ import { getZone } from "@/lib/utils";
 import { getDevicesByZone } from "@/lib/deviceStore";
 import { calculateAreaStatus } from "@/lib/utils";
 import { postReadingToSupabase } from "@/services/readingsService";
+import { saveDeviceLocationToSupabase } from "@/services/deviceLocationSupabaseService";
 const LOCATIONS = [
   "North Zone",
   "South Zone",
@@ -119,6 +120,8 @@ const LOCATIONS = [
   "West Zone",
   "Central Hub",
 ];
+
+const INDIA_CENTER = { lat: 20.5937, lng: 78.9629 };
 
 const toIsoLocal = (value: unknown): string => {
   if (typeof value === "string") return value;
@@ -247,14 +250,10 @@ export const UserDashboard = () => {
     name: string;
     type: "simulator" | "real";
     manualLocation: string;
-    latitude: number | null;
-    longitude: number | null;
   }>({
     name: "",
     type: "simulator",
     manualLocation: "",
-    latitude: null, // Force location selection
-    longitude: null,
   });
   const [newDeviceConnected, setNewDeviceConnected] = useState(false);
   const [newDeviceMapLocation, setNewDeviceMapLocation] = useState<{
@@ -447,18 +446,6 @@ export const UserDashboard = () => {
     void fetchAreaData();
   }, [selectedDevice]);
 
-  useEffect(() => {
-    setNewDevice((prev) => ({
-      ...prev,
-      latitude: newDeviceMapLocation.lat,
-      longitude: newDeviceMapLocation.lng,
-      manualLocation:
-        newDeviceMapLocation.address ||
-        newDeviceMapLocation.label ||
-        prev.manualLocation,
-    }));
-  }, [newDeviceMapLocation]);
-
   const refreshDeviceStatus = async (deviceId: string) => {
     const latest = getLocalDeviceHistory(deviceId).slice(-1)[0];
     if (!latest) {
@@ -523,8 +510,8 @@ export const UserDashboard = () => {
 
       // Validate coordinates
       if (
-        !Number.isFinite(newDevice.latitude) ||
-        !Number.isFinite(newDevice.longitude)
+        !Number.isFinite(newDeviceMapLocation.lat) ||
+        !Number.isFinite(newDeviceMapLocation.lng)
       ) {
         console.error("[Dashboard] Invalid latitude/longitude");
         alert("Please enter valid latitude and longitude values");
@@ -532,7 +519,7 @@ export const UserDashboard = () => {
       }
 
       // Compute zone from latitude and longitude
-      const deviceZone = getZone(newDevice.latitude, newDevice.longitude);
+      const deviceZone = getZone(newDeviceMapLocation.lat, newDeviceMapLocation.lng);
       console.log(`[Dashboard] Creating device with zone: ${deviceZone}`);
 
       const payload: Omit<DeviceRecord, "id"> = {
@@ -540,8 +527,8 @@ export const UserDashboard = () => {
         name: newDevice.name.trim(),
         uniqueId: deviceId,
         location: newDevice.manualLocation.trim(),
-        latitude: newDevice.latitude,
-        longitude: newDevice.longitude,
+        latitude: newDeviceMapLocation.lat,
+        longitude: newDeviceMapLocation.lng,
         zone: deviceZone,
         status:
           newDevice.type === "real"
@@ -558,14 +545,29 @@ export const UserDashboard = () => {
 
       void queuePendingDeviceUpsert(created);
       upsertLocalDevice(created);
+
+      await saveDeviceLocationToSupabase({
+        deviceId: created.id,
+        ownerUid: created.ownerUid,
+        name: created.name,
+        latitude: newDeviceMapLocation.lat,
+        longitude: newDeviceMapLocation.lng,
+        address: newDeviceMapLocation.address || payload.location,
+        city: "",
+        district: "",
+        state: "",
+        country: "",
+        postalCode: "",
+        zone: payload.zone || "",
+        accuracy: null,
+      });
+
       setDevices((prev) => [created, ...prev]);
       setSelectedDeviceId(created.id);
       setNewDevice({
         name: "",
         type: "simulator",
         manualLocation: "",
-        latitude: null, // Force location selection
-        longitude: null,
       });
       setNewDeviceMapLocation({
         lat: null, // Force location selection
@@ -591,9 +593,22 @@ export const UserDashboard = () => {
     lng: number;
     zone: string;
     location: string;
+    city: string;
+    district: string;
+    state: string;
+    country: string;
+    postalCode: string;
+    accuracy: number | null;
+    permissionStatus: string;
+    gpsStatus: string;
   }): Promise<boolean> => {
     if (!user || !device.name.trim()) {
       console.warn("[Dashboard] Invalid device input from modal");
+      return false;
+    }
+
+    if (!Number.isFinite(device.lat) || !Number.isFinite(device.lng)) {
+      alert("Latitude and longitude are required. Please choose a valid map location.");
       return false;
     }
 
@@ -615,6 +630,15 @@ export const UserDashboard = () => {
         latitude: device.lat,
         longitude: device.lng,
         zone: device.zone || getZone(device.lat, device.lng),
+        address: device.location.trim(),
+        city: device.city,
+        district: device.district,
+        state: device.state,
+        country: device.country,
+        postalCode: device.postalCode,
+        locationAccuracy: device.accuracy,
+        gpsStatus: device.gpsStatus,
+        permissionStatus: device.permissionStatus,
         status: "active",
         battery: 85,
         deviceType: "real",
@@ -625,6 +649,23 @@ export const UserDashboard = () => {
 
       void queuePendingDeviceUpsert(created);
       upsertLocalDevice(created);
+
+      await saveDeviceLocationToSupabase({
+        deviceId: created.id,
+        ownerUid: created.ownerUid,
+        name: created.name,
+        latitude: device.lat,
+        longitude: device.lng,
+        address: device.location.trim(),
+        city: device.city,
+        district: device.district,
+        state: device.state,
+        country: device.country,
+        postalCode: device.postalCode,
+        zone: payload.zone || "",
+        accuracy: device.accuracy,
+      });
+
       setDevices((prev) => [created, ...prev]);
       setSelectedDeviceId(created.id);
       setActiveTab("Hardware");
@@ -1148,8 +1189,8 @@ export const UserDashboard = () => {
   );
   const { simulatedDevices, alertFeed } = useGeoSimulation(
     {
-      lat: selectedRealPoint?.lat ?? 25.61,
-      lng: selectedRealPoint?.lng ?? 85.14,
+      lat: selectedRealPoint?.lat ?? INDIA_CENTER.lat,
+      lng: selectedRealPoint?.lng ?? INDIA_CENTER.lng,
     },
     geoSimulationEnabled,
     70,
@@ -2785,8 +2826,6 @@ export const UserDashboard = () => {
                                   next.address ||
                                   next.label ||
                                   prev.manualLocation,
-                                latitude: next.lat,
-                                longitude: next.lng,
                               }));
                             }}
                           />
@@ -2824,8 +2863,13 @@ export const UserDashboard = () => {
                             Precise Coordinates
                           </p>
                           <p className="mt-1">
-                            {newDeviceMapLocation.lat.toFixed(5)},{" "}
-                            {newDeviceMapLocation.lng.toFixed(5)}
+                            {Number.isFinite(newDeviceMapLocation.lat)
+                              ? newDeviceMapLocation.lat.toFixed(5)
+                              : "N/A"}
+                            {", "}
+                            {Number.isFinite(newDeviceMapLocation.lng)
+                              ? newDeviceMapLocation.lng.toFixed(5)
+                              : "N/A"}
                           </p>
                           <p className="mt-1 text-xs text-slate-400">
                             Stored in database for geo-intelligence, clustering

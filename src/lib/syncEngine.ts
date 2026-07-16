@@ -23,6 +23,15 @@ export type DeviceRecordLike = {
   latitude?: number;
   longitude?: number;
   zone?: string;
+  address?: string;
+  city?: string;
+  district?: string;
+  state?: string;
+  country?: string;
+  postalCode?: string;
+  locationAccuracy?: number | null;
+  permissionStatus?: string;
+  gpsStatus?: string;
   status: "active" | "inactive";
   battery?: number;
   createdAt: string;

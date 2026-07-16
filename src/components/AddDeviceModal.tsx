@@ -16,36 +16,102 @@ interface AddDeviceModalProps {
     lng: number;
     zone: string;
     location: string;
+    city: string;
+    district: string;
+    state: string;
+    country: string;
+    postalCode: string;
+    accuracy: number | null;
+    permissionStatus: string;
+    gpsStatus: string;
   }) => Promise<boolean>;
 }
 
+type SelectedLocationState = {
+  lat: number | null;
+  lng: number | null;
+  zone: string;
+  address: string;
+  city: string;
+  district: string;
+  state: string;
+  country: string;
+  postalCode: string;
+  accuracy: number | null;
+  permissionStatus: string;
+  gpsStatus: string;
+  isConfirmed: boolean;
+};
+
+const EMPTY_LOCATION: SelectedLocationState = {
+  lat: null,
+  lng: null,
+  zone: '',
+  address: '',
+  city: '',
+  district: '',
+  state: '',
+  country: '',
+  postalCode: '',
+  accuracy: null,
+  permissionStatus: 'unknown',
+  gpsStatus: 'idle',
+  isConfirmed: false,
+};
+
 export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose, onAddDevice }) => {
   const [name, setName] = useState('');
-  const [zone, setZone] = useState('');
-  const [lat, setLat] = useState(20.5937);
-  const [lng, setLng] = useState(78.9629);
-  const [selectedLat, setSelectedLat] = useState<number | null>(null); // Force location selection
-  const [selectedLng, setSelectedLng] = useState<number | null>(null); // Force location selection
-  const [locationText, setLocationText] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState<SelectedLocationState>(EMPTY_LOCATION);
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const handleLocationSelect = React.useCallback(
-    (newLat: number, newLng: number, address: string) => {
-      setSelectedLat(newLat);
-      setSelectedLng(newLng);
-      setLocationText(address);
-      setZone(getZone(newLat, newLng));
+    (next: {
+      lat: number;
+      lng: number;
+      address: string;
+      city: string;
+      district: string;
+      state: string;
+      country: string;
+      postalCode: string;
+      accuracy: number | null;
+      permissionStatus: string;
+      gpsStatus: string;
+      source: 'sync' | 'current-location' | 'search' | 'map-click' | 'marker-drag';
+    }) => {
+      setSelectedLocation((prev) => {
+        const nextConfirmed =
+          prev.isConfirmed ||
+          next.source !== 'sync' ||
+          next.gpsStatus === 'ready' ||
+          next.gpsStatus === 'tracking';
+
+        const updated = {
+          lat: next.lat,
+          lng: next.lng,
+          address: next.address,
+          city: next.city,
+          district: next.district,
+          state: next.state,
+          country: next.country,
+          postalCode: next.postalCode,
+          accuracy: next.accuracy,
+          permissionStatus: next.permissionStatus,
+          gpsStatus: next.gpsStatus,
+          zone: getZone(next.lat, next.lng),
+          isConfirmed: nextConfirmed,
+        };
+
+        return updated;
+      });
     },
     [],
   );
 
   const resetForm = () => {
     setName('');
-    setZone('');
-    setSelectedLat(null); // Force location selection on next registration
-    setSelectedLng(null); // Force location selection on next registration
-    setLocationText('');
+    setSelectedLocation(EMPTY_LOCATION);
     setSubmitError('');
     setSubmitting(false);
   };
@@ -65,8 +131,16 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose,
       return;
     }
 
-    if (selectedLat === null || selectedLng === null) {
+    if (
+      !Number.isFinite(selectedLocation.lat) ||
+      !Number.isFinite(selectedLocation.lng)
+    ) {
       setSubmitError('Please select a location on the map.');
+      return;
+    }
+
+    if (!selectedLocation.isConfirmed) {
+      setSubmitError('Please wait for GPS or interact with map/search before submitting.');
       return;
     }
 
@@ -74,10 +148,20 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose,
 
     const success = await onAddDevice({
       name: name.trim(),
-      lat: selectedLat,
-      lng: selectedLng,
-      zone,
-      location: locationText || `${selectedLat.toFixed(5)}, ${selectedLng.toFixed(5)}`,
+      lat: selectedLocation.lat,
+      lng: selectedLocation.lng,
+      zone: selectedLocation.zone,
+      location:
+        selectedLocation.address ||
+        `${selectedLocation.lat.toFixed(5)}, ${selectedLocation.lng.toFixed(5)}`,
+      city: selectedLocation.city,
+      district: selectedLocation.district,
+      state: selectedLocation.state,
+      country: selectedLocation.country,
+      postalCode: selectedLocation.postalCode,
+      accuracy: selectedLocation.accuracy,
+      permissionStatus: selectedLocation.permissionStatus,
+      gpsStatus: selectedLocation.gpsStatus,
     });
 
     setSubmitting(false);
@@ -97,14 +181,14 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose,
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm md:items-center"
           onClick={onClose}
         >
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.95, opacity: 0 }}
-            className="relative w-full max-w-2xl mx-4 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden"
+            className="relative my-6 w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100vh-3rem)] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
@@ -117,7 +201,7 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose,
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="device-name">Device Name</Label>
@@ -136,7 +220,7 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose,
                   <Input
                     id="zone"
                     type="text"
-                    value={zone}
+                    value={selectedLocation.zone}
                     readOnly
                     placeholder="Select location on map"
                   />
@@ -148,26 +232,28 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose,
                 <p className="text-sm text-slate-600 dark:text-slate-400">
                   Search manually or pick a spot on the map like Rapido/Swiggy.
                 </p>
-                <Input
-                  type="text"
-                  value={locationText}
-                  onChange={(e) => setLocationText(e.target.value)}
-                  placeholder="Type address or location"
-                />
                 <MapPicker
-                  onLocationSelect={(newLat, newLng, address) => {
-                    handleLocationSelect(newLat, newLng, address);
-                  }}
-                  initialLat={lat}
-                  initialLng={lng}
+                  onLocationSelect={handleLocationSelect}
                 />
-                {selectedLat !== null && selectedLng !== null && (
-                  <div className="flex flex-wrap gap-4 text-sm text-slate-600 dark:text-slate-400">
-                    <span className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4" />
-                      {selectedLat.toFixed(6)}, {selectedLng.toFixed(6)}
-                    </span>
-                    <span>Address: {locationText || 'Selected location'}</span>
+                {Number.isFinite(selectedLocation.lat) && Number.isFinite(selectedLocation.lng) && (
+                  <div className="space-y-2 text-sm text-slate-600 dark:text-slate-400">
+                    <div className="flex flex-wrap gap-4">
+                      <span className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4" />
+                        {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
+                      </span>
+                      <span>Accuracy: {Number.isFinite(selectedLocation.accuracy) ? `${selectedLocation.accuracy?.toFixed(1)} m` : 'N/A'}</span>
+                      <span>Permission: {selectedLocation.permissionStatus}</span>
+                      <span>GPS: {selectedLocation.gpsStatus}</span>
+                    </div>
+                    <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 text-xs leading-5 dark:border-slate-700 dark:bg-slate-900/50">
+                      <p><span className="font-semibold">Detected Address:</span> {selectedLocation.address || 'N/A'}</p>
+                      <p><span className="font-semibold">Country:</span> {selectedLocation.country || 'N/A'}</p>
+                      <p><span className="font-semibold">State:</span> {selectedLocation.state || 'N/A'}</p>
+                      <p><span className="font-semibold">District:</span> {selectedLocation.district || 'N/A'}</p>
+                      <p><span className="font-semibold">City:</span> {selectedLocation.city || 'N/A'}</p>
+                      <p><span className="font-semibold">Pincode:</span> {selectedLocation.postalCode || 'N/A'}</p>
+                    </div>
                   </div>
                 )}
               </div>
@@ -182,7 +268,13 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ isOpen, onClose,
                 </Button>
                 <Button
                   type="submit"
-                  disabled={!name.trim() || selectedLat === null || selectedLng === null || submitting}
+                  disabled={
+                    !name.trim() ||
+                    !Number.isFinite(selectedLocation.lat) ||
+                    !Number.isFinite(selectedLocation.lng) ||
+                    !selectedLocation.isConfirmed ||
+                    submitting
+                  }
                   className="bg-cyan-500 hover:bg-cyan-600 text-white"
                 >
                   {submitting ? 'Adding...' : 'Add Device'}

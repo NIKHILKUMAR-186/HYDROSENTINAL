@@ -39,6 +39,7 @@ interface LiveDeviceMapProps {
 }
 
 type FilterStatus = "all" | "healthy" | "warning" | "critical" | "offline" | "simulator";
+const INDIA_CENTER = { lat: 20.5937, lng: 78.9629 };
 
 const MapContainerAny = MapContainer as any;
 const TileLayerAny = TileLayer as any;
@@ -74,8 +75,8 @@ export const LiveDeviceMap: React.FC<LiveDeviceMapProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [zoomLevel, setZoomLevel] = useState(11);
-  const [centerLat, setCenterLat] = useState(25.59);
-  const [centerLng, setCenterLng] = useState(85.14);
+  const [centerLat, setCenterLat] = useState(INDIA_CENTER.lat);
+  const [centerLng, setCenterLng] = useState(INDIA_CENTER.lng);
 
   // Subscribe to Firestore device locations in real-time
   useEffect(() => {
@@ -89,7 +90,7 @@ export const LiveDeviceMap: React.FC<LiveDeviceMapProps> = ({
         // Auto-fit bounds if devices loaded
         if (updatedDevices.length > 0) {
           const validDevices = updatedDevices.filter(
-            (d) => d.latitude && d.longitude,
+            (d) => Number.isFinite(d.latitude) && Number.isFinite(d.longitude),
           );
           if (validDevices.length > 0) {
             const avgLat = validDevices.reduce((sum, d) => sum + (d.latitude || 0), 0) / validDevices.length;
@@ -110,7 +111,7 @@ export const LiveDeviceMap: React.FC<LiveDeviceMapProps> = ({
   // Create map markers from devices
   const markers = useMemo(() => {
     return devices
-      .filter((d) => d.latitude && d.longitude)
+      .filter((d) => Number.isFinite(d.latitude) && Number.isFinite(d.longitude))
       .map((device) => createMapMarker(device, latestReadings[device.id]))
       .filter((marker) => {
         // Apply search filter
@@ -166,6 +167,8 @@ export const LiveDeviceMap: React.FC<LiveDeviceMapProps> = ({
   );
 
   const mapCenter = selectedDevice?.latitude && selectedDevice?.longitude
+    && Number.isFinite(selectedDevice.latitude)
+    && Number.isFinite(selectedDevice.longitude)
     ? [selectedDevice.latitude, selectedDevice.longitude]
     : [centerLat, centerLng];
 

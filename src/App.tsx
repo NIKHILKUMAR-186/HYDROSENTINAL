@@ -12,6 +12,7 @@ import SharedAnimatedBackground from "./components/SharedAnimatedBackground";
 import AppErrorBoundary from "./components/AppErrorBoundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isSupabaseConfigured, missingSupabaseKeys } from "./integrations/supabase/client";
+import { supabase } from "./utils/supabase";
 
 const Login = lazy(() => import("./pages/Login.tsx"));
 const Signup = lazy(() => import("./pages/Signup.tsx"));
@@ -242,6 +243,50 @@ const ThemeBackground = () => {
   return <SharedAnimatedBackground />;
 };
 
+type Todo = {
+  id: number | string;
+  name: string;
+};
+
+const TodoPreview = () => {
+  const [todos, setTodos] = useState<Todo[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const getTodos = async () => {
+      const { data } = await supabase.from("todos").select("id,name").limit(5);
+
+      if (mounted && data) {
+        setTodos(data as Todo[]);
+      }
+    };
+
+    getTodos();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  if (!todos.length) {
+    return null;
+  }
+
+  return (
+    <div className="fixed bottom-4 right-4 z-50 w-64 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-xl dark:border-slate-700 dark:bg-slate-900/95">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+        Todos Preview
+      </p>
+      <ul className="mt-2 space-y-1 text-sm text-slate-700 dark:text-slate-100">
+        {todos.map((todo) => (
+          <li key={todo.id}>{todo.name}</li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
 const App = () => (
   <ThemeProvider>
     <QueryClientProvider client={queryClient}>
@@ -263,6 +308,7 @@ const App = () => (
           </TooltipProvider>
         </AppErrorBoundary>
       </div>
+      <TodoPreview />
     </QueryClientProvider>
   </ThemeProvider>
 );

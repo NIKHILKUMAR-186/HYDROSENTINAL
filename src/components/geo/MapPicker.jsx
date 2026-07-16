@@ -9,6 +9,9 @@ import { getZone } from "@/lib/utils";
 
 const INDIA_CENTER = { lat: 20.5937, lng: 78.9629 };
 
+const hasValidCoords = (value) =>
+  Number.isFinite(Number(value?.lat)) && Number.isFinite(Number(value?.lng));
+
 const ensureLeafletIcons = () => {
   if (typeof window === "undefined") return;
   delete L.Icon.Default.prototype._getIconUrl;
@@ -50,16 +53,16 @@ const markerClass = (status) => {
 
 export const MapPicker = ({ value, onChange, height = "18rem", status = "safe", label = "Selected location" }) => {
   const { coords, updateFromMap, useCurrentLocation, address, zone, loadingAddress, error } = useLocation(
-    value?.lat && value?.lng ? value : INDIA_CENTER,
+    hasValidCoords(value) ? value : INDIA_CENTER,
   );
 
   const currentValue = useMemo(() => {
-    if (value?.lat && value?.lng) return value;
+    if (hasValidCoords(value)) return value;
     return { ...coords, label: address || label };
   }, [address, coords, label, value]);
 
   useEffect(() => {
-    if (value?.lat && value?.lng && (value.lat !== coords.lat || value.lng !== coords.lng)) {
+    if (hasValidCoords(value) && (value.lat !== coords.lat || value.lng !== coords.lng)) {
       void updateFromMap(value.lat, value.lng);
     }
   }, [coords.lat, coords.lng, updateFromMap, value]);
