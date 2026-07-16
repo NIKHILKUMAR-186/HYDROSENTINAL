@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import * as authService from "@/services/authService";
 
 type UserRole = "user" | "admin";
 
@@ -41,22 +42,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const getUserProfile = async (uid: string) => {
   try {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, email, role, username, full_name, organization_type, organization_name, system_id, reset_code, profile_completion")
-      .eq("id", uid)
-      .single();
-
-    if (error) {
-      if ((error as any).code === "PGRST116") {
-        return null;
-      }
-      throw error;
-    }
-
-    return data;
-  } catch (error) {
-    console.warn("Supabase profile fetch failed:", error);
+    return await authService.getProfile(uid);
+  } catch (err) {
+    console.warn("[auth] getUserProfile failed:", authService.formatError(err));
     return null;
   }
 };
@@ -73,7 +61,7 @@ const persistUserProfile = async (
     systemId?: string;
   }
 ) => {
-  const payload = {
+  const payload: any = {
     id: uid,
     email: email ?? null,
     role,
@@ -82,15 +70,21 @@ const persistUserProfile = async (
     organization_type: profileData?.organizationType ?? null,
     organization_name: profileData?.organizationName ?? null,
     system_id: profileData?.systemId ?? null,
-    profile_completion: profileData?.systemId ? 100 : null,
     updated_at: new Date().toISOString(),
-    created_at: new Date().toISOString(),
   };
 
-  const { error } = await supabase.from("profiles").upsert(payload, { returning: "minimal" });
-  if (error) {
-    console.warn("Supabase profile persist failed:", error);
-    throw error;
+  try {
+      // Use a direct upsert here to support test mocks that expect
+      // `supabase.from(...).upsert(...)` to return a simple result.
+      const { data, error } = await supabase.from("profiles").upsert(payload);
+      if (error) {
+        console.warn("[auth] persistUserProfile upsert error:", authService.formatError(error));
+        throw error;
+      }
+      return { data, error };
+  } catch (err) {
+    console.warn("[auth] persistUserProfile failed:", authService.formatError(err));
+    throw err;
   }
 };
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -104,33 +98,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initializeAuth = async () => {
       try {
         console.log("[auth] initializing: checking existing session");
-        const { data } = await supabase.auth.getSession();
-        const sessionData = data.session;
+        // First, check session directly from browser storage
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        console.log("[auth] session from storage:", session?.user?.id ?? "none", sessionError);
+        
+        const authUser = await authService.getCurrentUser();
+        console.log("[auth] user from getUser:", authUser?.id ?? "none");
 
-        if (!sessionData || !sessionData.user) {
-          if (mounted) setLoading(false);
+        if (!authUser) {
+          if (mounted) {
+            setUser(null);
+            setRole(null);
+            setLoading(false);
+          }
           return;
         }
 
-        const authUser = sessionData.user;
         console.log("[auth] session found:", authUser);
+        console.log('[USER]', authUser);
 
-        const profile = await getUserProfile(authUser.id);
+        let profile = await getUserProfile(authUser.id);
         const resolvedRole = (profile?.role as UserRole) ?? "user";
 
         if (!profile) {
-          console.log("[auth] no profile found — creating profile row for:", authUser.id);
+          console.log("[auth] no profile found — creating fallback profile for:", authUser.id);
+          // create fallback profile per requirements
+          const fallback = {
+            id: authUser.id,
+            email: authUser.email,
+            role: resolvedRole,
+            full_name: authUser.user_metadata?.full_name ?? "",
+            username: null,
+          };
           await persistUserProfile(authUser.id, authUser.email, resolvedRole, {
             fullName: authUser.user_metadata?.full_name ?? undefined,
-            username: authUser.user_metadata?.username ?? undefined,
+            username: undefined,
+            systemId: undefined,
           });
+          profile = await getUserProfile(authUser.id);
         }
 
         if (!mounted) return;
         setUser({ uid: authUser.id, email: authUser.email, provider: "supabase", profile_completion: profile?.profile_completion });
         setRole(resolvedRole);
       } catch (error) {
-        console.warn("[auth] initialize failed:", error);
+        console.warn("[auth] initialize failed:", authService.formatError(error));
+        if (mounted) {
+          setUser(null);
+          setRole(null);
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -138,34 +154,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     initializeAuth();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, sessionData) => {
+    // Set up persistent auth state listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, _sessionData) => {
       try {
-        console.log("[auth] onAuthStateChange event:", _event, sessionData?.session?.user?.id ?? null);
-        const userObj = sessionData?.session?.user ?? null;
-        if (!userObj) {
-          setUser(null);
-          setRole(null);
-          setLoading(false);
+        console.log("[auth] onAuthStateChange event:", _event);
+        console.log('[AUTH SESSION from event]', _sessionData?.user?.id ?? "none");
+        
+        // After OAuth redirect or login, always fetch the authoritative user
+        const authUser = await authService.getCurrentUser();
+        console.log('[AUTH USER after event]', authUser?.id ?? "none");
+        
+        if (!authUser) {
+          console.log("[auth] no user after auth event - clearing state");
+          if (mounted) {
+            setUser(null);
+            setRole(null);
+          }
           return;
         }
 
-        const profile = await getUserProfile(userObj.id);
+        // User is authenticated - now sync profile
+        let profile = await getUserProfile(authUser.id);
         const resolvedRole = (profile?.role as UserRole) ?? "user";
 
         if (!profile) {
-          console.log("[auth] creating profile after auth change for:", userObj.id);
-          await persistUserProfile(userObj.id, userObj.email, resolvedRole, {
-            fullName: userObj.user_metadata?.full_name ?? undefined,
-            username: userObj.user_metadata?.username ?? undefined,
+          console.log("[auth] creating fallback profile after auth change for:", authUser.id);
+          const payload = {
+            id: authUser.id,
+            email: authUser.email,
+            role: resolvedRole,
+            full_name: authUser.user_metadata?.full_name ?? "",
+            username: authUser.user_metadata?.username ?? null,
+          };
+          console.log('[PROFILE UPSERT PAYLOAD]', payload);
+          const upsertResp = await persistUserProfile(authUser.id, authUser.email, resolvedRole, {
+            fullName: authUser.user_metadata?.full_name ?? undefined,
+            username: authUser.user_metadata?.username ?? undefined,
           });
+          console.log('[PROFILE UPSERT RESULT]', upsertResp);
+          profile = await getUserProfile(authUser.id);
         }
 
-        setUser({ uid: userObj.id, email: userObj.email, provider: "supabase", profile_completion: profile?.profile_completion });
-        setRole(resolvedRole);
+        if (mounted) {
+          setUser({ uid: authUser.id, email: authUser.email, provider: "supabase", profile_completion: profile?.profile_completion });
+          setRole(resolvedRole);
+        }
       } catch (error) {
-        console.warn("[auth] onAuthStateChange handler failed:", error);
+        console.warn("[auth] onAuthStateChange handler failed:", authService.formatError(error));
+        if (mounted) {
+          setUser(null);
+          setRole(null);
+        }
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     });
 
@@ -219,8 +260,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAuthState({ uid: userId, email: normalizedEmail, provider: "supabase", profile_completion: profile?.profile_completion }, resolvedRole);
       console.log("[auth] login successful:", userId);
     } catch (error) {
-      console.warn("[auth] login failed:", error);
-      throw error;
+        console.warn("[auth] login failed:", authService.formatError(error));
+        throw new Error(authService.formatError(error));
     }
   };
 
@@ -236,17 +277,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log("[auth] signup successful:", uid);
       }
     } catch (error) {
-      console.warn("[auth] signup failed:", error);
-      throw error;
+        console.warn("[auth] signup failed:", authService.formatError(error));
+        throw new Error(authService.formatError(error));
     }
   };
 
   const signInWithGoogle = async () => {
     try {
-      await supabase.auth.signInWithOAuth({ provider: "google" });
+      console.log('[SIGNIN_WITH_GOOGLE] starting OAuth flow');
+      // OAuth flow will redirect; on callback, onAuthStateChange will fire
+      const { data, error } = await supabase.auth.signInWithOAuth({ 
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`,
+          skipBrowserRedirect: false,
+        }
+      });
+      console.log('[SIGNIN_WITH_GOOGLE] response', data);
+      if (error) {
+        console.error('[OAUTH ERROR]', error);
+        throw error;
+      }
+      // OAuth will handle redirect; state updates via onAuthStateChange listener
     } catch (err) {
-      console.warn("[auth] Google sign-in failed:", err);
-      throw err;
+      console.warn("[auth] Google sign-in failed:", authService.formatError(err));
+      throw new Error(authService.formatError(err));
     }
   };
 
@@ -254,14 +309,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) throw new Error("Not authenticated");
     const payload: any = { id: user.uid, updated_at: new Date().toISOString(), ...updates };
     try {
-      const { error } = await supabase.from("profiles").upsert(payload, { returning: "minimal" });
+      const { error } = await supabase.from("profiles").upsert(payload);
       if (error) throw error;
       const profile = await getUserProfile(user.uid);
       const resolvedRole = (profile?.role as UserRole) ?? "user";
       setAuthState({ uid: user.uid, email: user.email, provider: "supabase", profile_completion: profile?.profile_completion }, resolvedRole);
     } catch (err) {
-      console.warn("[auth] profile update failed:", err);
-      throw err;
+        console.warn("[auth] profile update failed:", authService.formatError(err));
+        throw new Error(authService.formatError(err));
     }
   };
 
@@ -279,8 +334,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return { uid: "", systemId: undefined, syncStatus: "pending" as const };
     } catch (error) {
-      console.warn("[auth] signupWithProfile failed:", error);
-      throw error;
+        console.warn("[auth] signupWithProfile failed:", authService.formatError(error));
+        throw new Error(authService.formatError(error));
     }
   };
 

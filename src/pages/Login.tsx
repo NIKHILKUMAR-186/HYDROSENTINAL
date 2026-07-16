@@ -8,6 +8,7 @@ import { Eye, EyeOff, AlertCircle, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import * as authService from "@/services/authService";
 
 export const Login = () => {
   const [email, setEmail] = useState("");
@@ -30,7 +31,8 @@ export const Login = () => {
     try {
       await signInWithGoogle();
     } catch (err) {
-      toast({ title: "Google sign-in failed", description: String(err) });
+      const msg = authService.formatError(err);
+      toast({ title: "Google sign-in failed", description: msg });
     }
   };
 
@@ -46,7 +48,7 @@ export const Login = () => {
       await login(email, password);
       toast({ title: "Signed in", description: "Redirecting..." });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(authService.formatError(err));
     } finally {
       setLoading(false);
     }
@@ -65,7 +67,7 @@ export const Login = () => {
         description: "Check your email for password reset instructions",
       });
     } catch (err) {
-      toast({ title: "Reset failed", description: String(err) });
+      toast({ title: "Reset failed", description: authService.formatError(err) });
     }
   };
 
